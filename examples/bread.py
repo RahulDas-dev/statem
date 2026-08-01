@@ -46,7 +46,7 @@ def start_cooling(ctx: Context[BakingSession], signal: Signal) -> None:
 
 
 def oven_is_cool(ctx: Context[BakingSession], signal: Signal) -> bool:
-    return ctx.session.oven_temp_c <= 30
+    return ctx.session.oven_temp_c <= 30  # noqa: PLR2004
 
 
 def plate_cake(ctx: Context[BakingSession], signal: Signal) -> None:
