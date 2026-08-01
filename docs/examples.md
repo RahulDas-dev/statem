@@ -27,7 +27,7 @@ uv run python examples/bread.py
 ```
 
 ```python
---8 < --"examples/bread.py"
+--8<-- "examples/bread.py"
 ```
 
 ## Bank teller bot (`examples/bank.py`)
@@ -63,5 +63,5 @@ uv run python examples/bank.py
 ```
 
 ```python
---8 < --"examples/bank.py"
+--8<-- "examples/bank.py"
 ```
