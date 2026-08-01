@@ -1,0 +1,281 @@
+import inspect
+import logging
+import uuid
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from functools import cached_property
+from typing import Any, Literal, NamedTuple, TypeAlias
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+logger = logging.getLogger(__name__)
+
+
+class GuardError(TypeError):
+    """Raised when a guard function returns a non-bool value."""
+
+
+class TransitionError(Exception):
+    """Raised when an action fails during a transition."""
+
+
+# — Runtime primitives ———————————————————————————————————————————————————
+
+
+@dataclass(frozen=True, slots=True)
+class Signal:
+    """A signal that triggers a transition.
+
+    `event` -- event name (upper-case by convention, e.g. `"START"`)
+    `data`  -- arbitrary payload dict; defaults to empty.
+    """
+
+    event: str
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+Tsource: TypeAlias = Literal["on", "always", "entry", "exit"]
+
+
+class ResultEntry(NamedTuple):
+    """A single recorded guard or action result, in execution order.
+
+    `state`  -- name of the state the machine was in when this fired.
+    `source` -- lifecycle hook: `"on"`, `"always"`, `"entry"`, or `"exit"`.
+    `kind`   -- `"guard"` or `"action"`.
+    `name`   -- registered name of the guard or action function.
+    `value`  -- `bool` for guards; return value (may be `None`) for actions.
+    """
+
+    state: str
+    source: Tsource
+    kind: Literal["guard", "action"]
+    name: str
+    value: Any
+
+
+@dataclass(slots=True)
+class ExecutionContext:
+    """Short-lived execution context passed to every action and guard during one `run()` call.
+
+    Created at the start of :meth:`StateMachine.run` and discarded when it returns.
+    The machine updates :attr:`current_state` as transitions fire.
+
+    `current_state` -- name of the state the machine is currently in;
+                        updated by the engine as each transition fires.
+    `session`       -- caller-owned, opaque payload of any shape; the engine
+                        never inspects it, only threads it through to actions/guards.
+    `run_id`        -- correlation id for this `run()` call, used in log lines;
+                        auto-generated (`uuid4` hex) when not supplied.
+    `history`       -- ordered list of every state entered during this
+                        `run()` call; the first entry is always the initial state.
+    `results`       -- insertion-ordered mapping of `"state|source|name"` ->
+                        :class:`ResultEntry` for every guard and action executed,
+                        in the exact order they fired during this `run()` call.
+    """
+
+    current_state: str
+    session: Any
+    run_id: str | None = None
+    history: list[str] = field(init=False)
+    results: list[ResultEntry] = field(init=False, default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.history = [self.current_state]
+        if self.run_id is None:
+            self.run_id = uuid.uuid4().hex
+
+
+# — Callable type aliases ————————————————————————————————————————————————
+
+ActionFn: TypeAlias = Callable[[ExecutionContext, Signal], Awaitable[Any] | Any]
+
+GuardFn: TypeAlias = Callable[[ExecutionContext, Signal], bool] | Callable[[ExecutionContext, Signal], Awaitable[bool]]
+
+
+# — Registries ——————————————————————————————————————————————————————————
+
+
+class RegEntry(NamedTuple):
+    """Internal registry entry: pairs a callable with its async flag, cached at registration time."""
+
+    fn: Callable[..., Any]
+    is_async: bool
+
+
+class ActionRegistry:
+    """Registry of named action functions (sync or async)."""
+
+    __slots__ = ("_fns",)
+
+    def __init__(self) -> None:
+        self._fns: dict[str, RegEntry] = {}
+
+    def register(self, name: str, fn: ActionFn) -> None:
+        self._fns[name] = RegEntry(fn=fn, is_async=inspect.iscoroutinefunction(fn))
+
+    def register_many(self, actions: dict[str, ActionFn]) -> None:
+        for name, fn in actions.items():
+            self.register(name, fn)
+
+    def has(self, name: str) -> bool:
+        return name in self._fns
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._fns
+
+    def __len__(self) -> int:
+        return len(self._fns)
+
+    async def execute(self, name: str, ctx: ExecutionContext, signal: Signal, source: Tsource) -> None:
+        """Execute a single named action. Raises `KeyError` if not registered."""
+        if name not in self._fns:
+            raise KeyError(f"'{name}' not registered")
+        entry = self._fns[name]
+        value = await entry.fn(ctx, signal) if entry.is_async else entry.fn(ctx, signal)
+        ctx.results.append(ResultEntry(state=ctx.current_state, source=source, kind="action", name=name, value=value))
+
+    async def execute_many(
+        self,
+        names: list[str],
+        ctx: ExecutionContext,
+        signal: Signal,
+        source: Literal["on", "always", "entry", "exit"],
+    ) -> None:
+        """Execute actions in order, awaiting each one."""
+        for name in names:
+            await self.execute(name, ctx, signal, source)
+
+
+class GuardRegistry:
+    """Registry of named guard functions (sync or async).
+
+    Async detection is cached at register time.
+    """
+
+    __slots__ = ("_fns",)
+
+    def __init__(self) -> None:
+        self._fns: dict[str, RegEntry] = {}
+
+    def register(self, name: str, fn: GuardFn) -> None:
+        self._fns[name] = RegEntry(fn=fn, is_async=inspect.iscoroutinefunction(fn))
+
+    def register_many(self, guards: dict[str, GuardFn]) -> None:
+        for name, fn in guards.items():
+            self.register(name, fn)
+
+    def has(self, name: str) -> bool:
+        return name in self._fns
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._fns
+
+    def __len__(self) -> int:
+        return len(self._fns)
+
+    async def evaluate(self, name: str | None, ctx: ExecutionContext, signal: Signal, source: Tsource) -> bool:
+        """Evaluate a guard. Returns `True` if `name` is `None` (no guard = pass)."""
+        if name is None:
+            return True
+        if name not in self._fns:
+            raise KeyError(f"'{name}' not registered")
+        entry = self._fns[name]
+        raw = await entry.fn(ctx, signal) if entry.is_async else entry.fn(ctx, signal)
+        if not isinstance(raw, bool):
+            raise GuardError(f"Guard '{name}' must return bool, got {type(raw).__name__!r}")
+        ctx.results.append(ResultEntry(state=ctx.current_state, source=source, kind="guard", name=name, value=raw))
+        logger.debug("Guard '%s' -> %s", name, raw)
+        return raw
+
+
+# — Config models ————————————————————————————————————————————————————————
+
+
+class TransitionConfig(BaseModel):
+    """Configuration for a single transition candidate.
+
+    `target`  -- name of the state to transition to.
+    `guard`   -- registered guard name that must pass for this transition to fire;
+                 `None` means the transition always passes.
+    `actions` -- ordered list of registered action names to execute when this
+                 transition fires.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    target: str
+    guard: str | None = Field(default=None)
+    actions: list[str] = Field(default_factory=list)
+
+
+class StateConfig(BaseModel):
+    """Configuration for one state.
+
+    `on`          -- maps event names to transition candidates.
+    `always`      -- eventless transitions checked after every state entry.
+    `entry`       -- action names to fire when entering this state.
+    `exit`        -- action names to fire when leaving this state.
+    `error_state` -- fallback state on unhandled action errors.
+
+    Extra fields (e.g. `role`, `intent`, `render`) are accepted and
+    silently ignored, so raw application config dicts can be passed directly.
+
+    Each `on` value is normalized to a list of `TransitionConfig` at parse time.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    on: dict[str, list[TransitionConfig]] = Field(default_factory=dict)
+    always: list[TransitionConfig] = Field(default_factory=list)
+    entry: list[str] = Field(default_factory=list)
+    exit: list[str] = Field(default_factory=list)
+    error_state: str | None = None
+
+    @field_validator("on", mode="before")
+    @classmethod
+    def _normalize_on(cls, v: Any) -> Any:
+        """Normalize each event value to a list of TransitionConfig-compatible dicts."""
+        if not isinstance(v, dict):
+            return v
+        result: dict[str, list[Any]] = {}
+        for event, spec in v.items():
+            if isinstance(spec, str):
+                result[event] = [{"target": spec}]
+            elif isinstance(spec, dict):
+                result[event] = [spec]
+            elif isinstance(spec, list):
+                result[event] = [{"target": item} if isinstance(item, str) else item for item in spec]
+            else:
+                result[event] = spec
+        return result
+
+    @field_validator("always", mode="before")
+    @classmethod
+    def _normalize_always(cls, v: Any) -> Any:
+        """Normalize each always item to a TransitionConfig-compatible dict."""
+        if not isinstance(v, list):
+            return v
+        return [{"target": item} if isinstance(item, str) else item for item in v]
+
+    @cached_property
+    def available_events(self) -> list[str]:
+        """Return the event names this state can receive, in declaration order.
+
+        Excludes the `"*"` wildcard entry -- use :attr:`accepts_wildcard` to
+        check whether the state has a catch-all handler.
+
+        Example::
+
+            cfg = StateConfig.model_validate({
+                "on": {"START": "running", "CANCEL": "idle", "*": "error"}
+            })
+            cfg.available_events  # ["START", "CANCEL"]
+            cfg.accepts_wildcard  # True
+        """
+        return [name for name in self.on if name != "*"]
+
+    @property
+    def accepts_wildcard(self) -> bool:
+        """Return `True` if this state has a `"*"` catch-all transition."""
+        return "*" in self.on
