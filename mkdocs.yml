@@ -1,8 +1,8 @@
 site_name: statem
 site_description: A minimal async state machine engine for Python, built on Pydantic.
-site_url: https://rahuldas-dev.github.io/statemachine/
-repo_url: https://github.com/RahulDas-dev/statemachine
-repo_name: RahulDas-dev/statemachine
+site_url: https://rahuldas-dev.github.io/statem/
+repo_url: https://github.com/RahulDas-dev/statem
+repo_name: RahulDas-dev/statem
 
 theme:
   name: material
@@ -37,9 +37,15 @@ plugins:
         python:
           options:
             docstring_style: google
-            show_source: true
+            show_source: false
             show_root_heading: true
+            show_root_full_path: false
+            heading_level: 3
             merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+            members_order: source
+            docstring_section_style: table
 
 markdown_extensions:
   - admonition

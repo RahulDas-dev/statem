@@ -24,6 +24,18 @@ _ALWAYS_SIGNAL = Signal(event="__always__")  # reused across all runs
 
 
 class StateMachine(BaseModel):
+    """A validated, immutable state graph paired with registries of named guards/actions.
+
+    Build one with `from_dict`, then drive it with `await run(...)`. Instances are frozen and
+    hold no per-run state, so a single `StateMachine` can safely process many concurrent runs --
+    all mutable state lives in the `ExecutionContext` created fresh for each `run()` call.
+
+    Attributes:
+        config: State name to `StateConfig` mapping -- the validated transition graph.
+        guards: Registry of named guard functions, evaluated to decide which transition fires.
+        actions: Registry of named action functions, executed on entry/exit/transition.
+    """
+
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     config: dict[str, StateConfig] = Field(default_factory=dict)
@@ -52,7 +64,7 @@ class StateMachine(BaseModel):
         if guard_dict:
             machine.guards.register_many(guard_dict)
         if action_dict or guard_dict:
-            machine._validate_registries()
+            machine.validate_registries()
         return machine
 
     @model_validator(mode="after")
@@ -87,8 +99,15 @@ class StateMachine(BaseModel):
 
         return self
 
-    def _validate_registries(self) -> None:
-        """Validate that all guards and actions referenced in the config are registered."""
+    # — Public API —————————————————————————————————————————————————————————
+
+    def validate_registries(self) -> None:
+        """Validate that all guards and actions referenced in `config` are registered.
+
+        Called automatically by `from_dict` when at least one of *action_dict* / *guard_dict* is
+        supplied. If you register actions/guards later via `self.actions`/`self.guards` directly,
+        call this yourself to check for typos -- raises `ValueError` listing anything missing.
+        """
         missing_guards: list[str] = []
         missing_actions: list[str] = []
 
@@ -117,30 +136,29 @@ class StateMachine(BaseModel):
         if errors:
             raise ValueError("; ".join(errors))
 
-    # — Public API —————————————————————————————————————————————————————————
-
     async def run(
         self,
+        *,
+        run_id: str | None = None,
         state_name: str,
         events: Signal | list[Signal],
         session: Any,
-        run_id: str | None = None,
     ) -> str:
-        """ "Process one or many signals starting from *state*.
+        """Process one or many signals starting from *state*. All arguments are keyword-only.
 
         Args:
+            run_id:     Correlation id for this run, used in log lines. If not provided (left as
+                        `None`), a `uuid4().hex` string is generated automatically.
             state_name: Current state name (e.g. `"idle"`).
             events:     Single `Signal`, list of `Signal`s, or `[]` to
                         only resolve `always` transitions for the current state.
             session:    Caller-owned, opaque payload of any shape (mutated
                         in-place by actions, if they choose to).
-            run_id:     Correlation id for this run, used in log lines;
-                        auto-generated (`uuid4` hex) when omitted.
 
         Returns:
             The final state name after all transitions have settled.
         """
-        ctx = ExecutionContext(current_state=state_name, session=session, run_id=run_id)
+        ctx = ExecutionContext(run_id=run_id, current_state=state_name, session=session)
         await self._check_always(ctx)
         items = (events,) if isinstance(events, Signal) else events
         for signal in items:
@@ -154,6 +172,11 @@ class StateMachine(BaseModel):
         return ctx.current_state
 
     def available_events(self, state_name: str) -> list[str]:
+        """Return the event names `state_name` can receive via `on`, or `[]` if the state is unknown.
+
+        Excludes the `"*"` wildcard entry -- use `StateConfig.accepts_wildcard` to check for a
+        catch-all handler.
+        """
         return list(self.config[state_name].on.keys()) if self.config.get(state_name, None) else []
 
     # — Internals ——————————————————————————————————————————————————————————

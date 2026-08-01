@@ -38,21 +38,24 @@ async def create_order(ctx, signal) -> None: ...  # actions may return anything 
 ```
 
 Register them via `from_dict(config, action_dict={...}, guard_dict={...})`, or later through
-`machine.actions.register(name, fn)` / `machine.guards.register(name, fn)`.
+`machine.actions.register(name, fn)` / `machine.guards.register(name, fn)`, followed by
+`machine.validate_registries()` to check for typos (raises `ValueError` listing anything missing).
 
 ## Running the machine
 
 ```python
-state = await machine.run(state_name, events, session, run_id=None)
+state = await machine.run(run_id=None, state_name=state_name, events=events, session=session)
 ```
 
+All arguments are keyword-only.
+
+- `run_id` — an optional correlation id used in log lines (`run_id=... | state=... | ...`).
+  If not provided (left as `None`), a `uuid4().hex` string is generated automatically.
 - `events` — a single `Signal`, a list of `Signal`s, or `[]` to only resolve pending
   `always`-transitions for the current state.
 - `session` — **any object you want.** The engine never inspects or mutates its shape; it's
   simply attached to the per-run `ExecutionContext` (`ctx.session`) so your guards/actions can
   read and mutate whatever they need.
-- `run_id` — an optional correlation id used in log lines (`run_id=... | state=... | ...`).
-  Auto-generated via `uuid4().hex` if omitted.
 - Returns the final state name once every signal has been processed and all pending
   `always`-transitions have settled.
 

@@ -100,13 +100,17 @@ class TestRun(unittest.IsolatedAsyncioTestCase):
     async def test_single_signal_transitions(self) -> None:
         cfg = {"idle": {"on": {"START": "running"}}, "running": {}}
         machine = StateMachine.from_dict(cfg)
-        result = await machine.run("idle", Signal(event="START"), make_session())
+        result = await machine.run(state_name="idle", events=Signal(event="START"), session=make_session())
         self.assertEqual(result, "running")
 
     async def test_list_of_signals_processed_sequentially(self) -> None:
         cfg = {"idle": {"on": {"START": "running"}}, "running": {"on": {"STOP": "idle"}}}
         machine = StateMachine.from_dict(cfg)
-        result = await machine.run("idle", [Signal(event="START"), Signal(event="STOP")], make_session())
+        result = await machine.run(
+            state_name="idle",
+            events=[Signal(event="START"), Signal(event="STOP")],
+            session=make_session(),
+        )
         self.assertEqual(result, "idle")
 
     async def test_empty_events_only_resolves_always(self) -> None:
@@ -115,39 +119,44 @@ class TestRun(unittest.IsolatedAsyncioTestCase):
             "running": {},
         }
         machine = StateMachine.from_dict(cfg, guard_dict={"always_true": sync_guard_true})
-        result = await machine.run("idle", [], make_session())
+        result = await machine.run(state_name="idle", events=[], session=make_session())
         self.assertEqual(result, "running")
 
     async def test_unknown_event_state_unchanged(self) -> None:
         cfg = {"idle": {"on": {"START": "running"}}, "running": {}}
         machine = StateMachine.from_dict(cfg)
-        result = await machine.run("idle", Signal(event="UNKNOWN"), make_session())
+        result = await machine.run(state_name="idle", events=Signal(event="UNKNOWN"), session=make_session())
         self.assertEqual(result, "idle")
 
     async def test_wildcard_fallback(self) -> None:
         cfg = {"idle": {"on": {"*": "fallback"}}, "fallback": {}}
         machine = StateMachine.from_dict(cfg)
-        result = await machine.run("idle", Signal(event="ANYTHING"), make_session())
+        result = await machine.run(state_name="idle", events=Signal(event="ANYTHING"), session=make_session())
         self.assertEqual(result, "fallback")
 
     async def test_run_forwards_explicit_run_id_to_logs(self) -> None:
         cfg = {"idle": {"on": {"START": "running"}}, "running": {}}
         machine = StateMachine.from_dict(cfg)
         with self.assertLogs("statem.machine", level="INFO") as cm:
-            await machine.run("idle", Signal(event="START"), make_session(), run_id="my-correlation-id")
+            await machine.run(
+                run_id="my-correlation-id",
+                state_name="idle",
+                events=Signal(event="START"),
+                session=make_session(),
+            )
         self.assertTrue(any("run_id=my-correlation-id" in line for line in cm.output))
 
     async def test_run_auto_generates_run_id_when_omitted(self) -> None:
         cfg = {"idle": {"on": {"START": "running"}}, "running": {}}
         machine = StateMachine.from_dict(cfg)
         with self.assertLogs("statem.machine", level="INFO") as cm:
-            await machine.run("idle", Signal(event="START"), make_session())
+            await machine.run(state_name="idle", events=Signal(event="START"), session=make_session())
         self.assertTrue(any("run_id=" in line and "run_id=None" not in line for line in cm.output))
 
     async def test_run_accepts_arbitrary_session_type(self) -> None:
         cfg = {"idle": {"on": {"START": "running"}}, "running": {}}
         machine = StateMachine.from_dict(cfg)
-        result = await machine.run("idle", Signal(event="START"), "anything-goes")
+        result = await machine.run(state_name="idle", events=Signal(event="START"), session="anything-goes")
         self.assertEqual(result, "running")
 
 
@@ -155,7 +164,7 @@ class TestPushSignal(unittest.IsolatedAsyncioTestCase):
     async def test_no_guard_passes_returns_false(self) -> None:
         cfg = {"idle": {"on": {"START": {"target": "running", "guard": "guard_false"}}}, "running": {}}
         machine = StateMachine.from_dict(cfg, guard_dict={"guard_false": sync_guard_false})
-        result = await machine.run("idle", Signal(event="START"), make_session())
+        result = await machine.run(state_name="idle", events=Signal(event="START"), session=make_session())
         self.assertEqual(result, "idle")
 
     async def test_action_error_falls_back_to_error_state(self) -> None:
@@ -165,14 +174,14 @@ class TestPushSignal(unittest.IsolatedAsyncioTestCase):
             "failed": {},
         }
         machine = StateMachine.from_dict(cfg, action_dict={"boom": action_raises})
-        result = await machine.run("idle", Signal(event="START"), make_session())
+        result = await machine.run(state_name="idle", events=Signal(event="START"), session=make_session())
         self.assertEqual(result, "failed")
 
     async def test_action_error_without_error_state_propagates(self) -> None:
         cfg = {"idle": {"on": {"START": {"target": "running", "actions": ["boom"]}}}, "running": {}}
         machine = StateMachine.from_dict(cfg, action_dict={"boom": action_raises})
         with self.assertRaises(TransitionError):
-            await machine.run("idle", Signal(event="START"), make_session())
+            await machine.run(state_name="idle", events=Signal(event="START"), session=make_session())
 
 
 class TestEnter(unittest.IsolatedAsyncioTestCase):
@@ -257,7 +266,7 @@ class TestTryTransitions(unittest.IsolatedAsyncioTestCase):
             cfg,
             guard_dict={"guard_false": sync_guard_false, "guard_true": sync_guard_true},
         )
-        result = await machine.run("idle", Signal(event="START"), make_session())
+        result = await machine.run(state_name="idle", events=Signal(event="START"), session=make_session())
         self.assertEqual(result, "running")
 
     async def test_all_candidates_fail_returns_false(self) -> None:

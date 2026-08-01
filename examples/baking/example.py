@@ -91,7 +91,12 @@ async def main() -> None:
     session = BakingSession()
     state = "idle"
     for event in ("START", "MIXED", "TIMER_DONE"):
-        state = await machine.run(state, Signal(event=event), session, run_id="bake-001")
+        state = await machine.run(
+            run_id="bake-001",
+            state_name=state,
+            events=Signal(event=event),
+            session=session,
+        )
 
     print(f"final state: {state}")
     print("session log:")

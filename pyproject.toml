@@ -28,9 +28,9 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/RahulDas-dev/statemachine"
-Repository = "https://github.com/RahulDas-dev/statemachine"
-Documentation = "https://rahuldas-dev.github.io/statemachine/"
+Homepage = "https://github.com/RahulDas-dev/statem"
+Repository = "https://github.com/RahulDas-dev/statem"
+Documentation = "https://rahuldas-dev.github.io/statem/"
 
 [tool.uv]
 dev-dependencies = [

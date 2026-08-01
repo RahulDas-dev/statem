@@ -23,8 +23,8 @@ def show_transitions(ctx: ExecutionContext) -> str:
     Iterates `ctx.results` (a `list[ResultEntry]`) which preserves the
     exact order guards and actions fired. Each hop groups entries by state.
 
-    Example output::
-
+    Example output:
+        ```text
         Transitions (2 hops):
         --------------------------------------------------------------------------------
         hop 1: idle -> collecting
@@ -42,6 +42,7 @@ def show_transitions(ctx: ExecutionContext) -> str:
         Final state: confirming
             entry  action : show_confirm              = None
         --------------------------------------------------------------------------------
+        ```
     """
     hops = len(ctx.history) - 1
     return _TRANSITION_TEMPLATE.substitute(

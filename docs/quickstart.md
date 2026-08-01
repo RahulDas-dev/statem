@@ -18,7 +18,7 @@ def can_start(ctx, signal) -> bool:
 
 async def main() -> None:
     machine = StateMachine.from_dict(config, guard_dict={"can_start": can_start})
-    state = await machine.run("idle", Signal(event="START"), session={})
+    state = await machine.run(state_name="idle", events=Signal(event="START"), session={})
     print(state)
 
 
@@ -37,14 +37,14 @@ Walking through what happened:
    [`StateConfig`](api.md#statem.StateConfig) schema, registers the `can_start` guard, and
    checks every guard/action referenced in `config` is registered (since `guard_dict` was
    supplied).
-2. `machine.run("idle", Signal(event="START"), session={})` starts in `"idle"`, dispatches a
+2. `machine.run(state_name="idle", events=Signal(event="START"), session={})` starts in `"idle"`, dispatches a
    `START` signal, evaluates the `can_start` guard, and — since it passes — transitions to
    `"running"`.
 3. The final state name is returned as a plain string.
 
 ## A fuller example
 
-[`examples/baking/example.py`](https://github.com/RahulDas-dev/statemachine/blob/main/examples/baking/example.py)
+[`examples/baking/example.py`](https://github.com/RahulDas-dev/statem/blob/main/examples/baking/example.py)
 in the repository builds a small bakery process (`idle → mixing → baking → cooling → done`) that
 exercises guards, actions, an `error_state` fallback, and an `always`-transition that
 auto-advances `cooling → done` once the oven has cooled — all triggered by a single `TIMER_DONE`

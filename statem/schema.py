@@ -26,8 +26,9 @@ class TransitionError(Exception):
 class Signal:
     """A signal that triggers a transition.
 
-    `event` -- event name (upper-case by convention, e.g. `"START"`)
-    `data`  -- arbitrary payload dict; defaults to empty.
+    Attributes:
+        event: Event name (upper-case by convention, e.g. `"START"`).
+        data: Arbitrary payload dict; defaults to empty.
     """
 
     event: str
@@ -40,11 +41,12 @@ Tsource: TypeAlias = Literal["on", "always", "entry", "exit"]
 class ResultEntry(NamedTuple):
     """A single recorded guard or action result, in execution order.
 
-    `state`  -- name of the state the machine was in when this fired.
-    `source` -- lifecycle hook: `"on"`, `"always"`, `"entry"`, or `"exit"`.
-    `kind`   -- `"guard"` or `"action"`.
-    `name`   -- registered name of the guard or action function.
-    `value`  -- `bool` for guards; return value (may be `None`) for actions.
+    Attributes:
+        state: Name of the state the machine was in when this fired.
+        source: Lifecycle hook: `"on"`, `"always"`, `"entry"`, or `"exit"`.
+        kind: `"guard"` or `"action"`.
+        name: Registered name of the guard or action function.
+        value: `bool` for guards; return value (may be `None`) for actions.
     """
 
     state: str
@@ -54,29 +56,29 @@ class ResultEntry(NamedTuple):
     value: Any
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class ExecutionContext:
     """Short-lived execution context passed to every action and guard during one `run()` call.
 
-    Created at the start of :meth:`StateMachine.run` and discarded when it returns.
-    The machine updates :attr:`current_state` as transitions fire.
+    Created at the start of `StateMachine.run` and discarded when it returns. The machine updates
+    `current_state` as transitions fire. All fields are keyword-only.
 
-    `current_state` -- name of the state the machine is currently in;
-                        updated by the engine as each transition fires.
-    `session`       -- caller-owned, opaque payload of any shape; the engine
-                        never inspects it, only threads it through to actions/guards.
-    `run_id`        -- correlation id for this `run()` call, used in log lines;
-                        auto-generated (`uuid4` hex) when not supplied.
-    `history`       -- ordered list of every state entered during this
-                        `run()` call; the first entry is always the initial state.
-    `results`       -- insertion-ordered mapping of `"state|source|name"` ->
-                        :class:`ResultEntry` for every guard and action executed,
-                        in the exact order they fired during this `run()` call.
+    Attributes:
+        run_id: Correlation id for this `run()` call, used in log lines. If not provided (left as
+            `None`), a `uuid4().hex` string is generated automatically in `__post_init__`.
+        current_state: Name of the state the machine is currently in; updated by the engine as
+            each transition fires.
+        session: Caller-owned, opaque payload of any shape; the engine never inspects it, only
+            threads it through to actions/guards.
+        history: Ordered list of every state entered during this `run()` call; the first entry
+            is always the initial state.
+        results: Ordered list of `ResultEntry` for every guard and action executed, in the exact
+            order they fired during this `run()` call.
     """
 
+    run_id: str | None = None
     current_state: str
     session: Any
-    run_id: str | None = None
     history: list[str] = field(init=False)
     results: list[ResultEntry] = field(init=False, default_factory=list)
 
@@ -112,13 +114,16 @@ class ActionRegistry:
         self._fns: dict[str, RegEntry] = {}
 
     def register(self, name: str, fn: ActionFn) -> None:
+        """Register a single named action function (sync or async)."""
         self._fns[name] = RegEntry(fn=fn, is_async=inspect.iscoroutinefunction(fn))
 
     def register_many(self, actions: dict[str, ActionFn]) -> None:
+        """Register multiple named action functions at once."""
         for name, fn in actions.items():
             self.register(name, fn)
 
     def has(self, name: str) -> bool:
+        """Return `True` if an action named `name` is registered."""
         return name in self._fns
 
     def __contains__(self, name: str) -> bool:
@@ -159,13 +164,16 @@ class GuardRegistry:
         self._fns: dict[str, RegEntry] = {}
 
     def register(self, name: str, fn: GuardFn) -> None:
+        """Register a single named guard function (sync or async)."""
         self._fns[name] = RegEntry(fn=fn, is_async=inspect.iscoroutinefunction(fn))
 
     def register_many(self, guards: dict[str, GuardFn]) -> None:
+        """Register multiple named guard functions at once."""
         for name, fn in guards.items():
             self.register(name, fn)
 
     def has(self, name: str) -> bool:
+        """Return `True` if a guard named `name` is registered."""
         return name in self._fns
 
     def __contains__(self, name: str) -> bool:
@@ -195,11 +203,11 @@ class GuardRegistry:
 class TransitionConfig(BaseModel):
     """Configuration for a single transition candidate.
 
-    `target`  -- name of the state to transition to.
-    `guard`   -- registered guard name that must pass for this transition to fire;
-                 `None` means the transition always passes.
-    `actions` -- ordered list of registered action names to execute when this
-                 transition fires.
+    Attributes:
+        target: Name of the state to transition to.
+        guard: Registered guard name that must pass for this transition to fire; `None` means
+            the transition always passes.
+        actions: Ordered list of registered action names to execute when this transition fires.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -212,16 +220,16 @@ class TransitionConfig(BaseModel):
 class StateConfig(BaseModel):
     """Configuration for one state.
 
-    `on`          -- maps event names to transition candidates.
-    `always`      -- eventless transitions checked after every state entry.
-    `entry`       -- action names to fire when entering this state.
-    `exit`        -- action names to fire when leaving this state.
-    `error_state` -- fallback state on unhandled action errors.
+    Extra fields (e.g. `role`, `intent`, `render`) are accepted and silently ignored, so raw
+    application config dicts can be passed directly. Each `on` value is normalized to a list of
+    `TransitionConfig` at parse time.
 
-    Extra fields (e.g. `role`, `intent`, `render`) are accepted and
-    silently ignored, so raw application config dicts can be passed directly.
-
-    Each `on` value is normalized to a list of `TransitionConfig` at parse time.
+    Attributes:
+        on: Maps event names to transition candidates.
+        always: Eventless transitions checked after every state entry.
+        entry: Action names to fire when entering this state.
+        exit: Action names to fire when leaving this state.
+        error_state: Fallback state on unhandled action errors.
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
@@ -262,16 +270,17 @@ class StateConfig(BaseModel):
     def available_events(self) -> list[str]:
         """Return the event names this state can receive, in declaration order.
 
-        Excludes the `"*"` wildcard entry -- use :attr:`accepts_wildcard` to
-        check whether the state has a catch-all handler.
+        Excludes the `"*"` wildcard entry -- use `accepts_wildcard` to check whether the state
+        has a catch-all handler.
 
-        Example::
-
+        Example:
+            ```python
             cfg = StateConfig.model_validate({
                 "on": {"START": "running", "CANCEL": "idle", "*": "error"}
             })
             cfg.available_events  # ["START", "CANCEL"]
             cfg.accepts_wildcard  # True
+            ```
         """
         return [name for name in self.on if name != "*"]
 
