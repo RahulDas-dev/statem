@@ -2,14 +2,15 @@
 
 Public API re-exported from this package so callers can import directly:
 
-    from statem import StateMachine, Signal, ExecutionContext
+    from statem import StateMachine, Signal, Context
 """
 
+from .diagram import to_mermaid
 from .machine import StateMachine
 from .schema import (
     ActionFn,
     ActionRegistry,
-    ExecutionContext,
+    Context,
     GuardError,
     GuardFn,
     GuardRegistry,
@@ -19,12 +20,12 @@ from .schema import (
     TransitionConfig,
     TransitionError,
 )
-from .utility import show_transitions
+from .tracing import show_transitions
 
 __all__ = [
     "ActionFn",
     "ActionRegistry",
-    "ExecutionContext",
+    "Context",
     "GuardError",
     "GuardFn",
     "GuardRegistry",
@@ -35,4 +36,5 @@ __all__ = [
     "TransitionConfig",
     "TransitionError",
     "show_transitions",
+    "to_mermaid",
 ]

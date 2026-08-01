@@ -6,7 +6,7 @@ The machine itself, its per-run execution context, and the event that drives a t
 
 ::: statem.StateMachine
 
-::: statem.ExecutionContext
+::: statem.Context
 
 ::: statem.Signal
 
@@ -37,3 +37,7 @@ Where named guard/action callables are registered and looked up by the engine.
 ::: statem.ResultEntry
 
 ::: statem.show_transitions
+
+## Diagrams
+
+::: statem.to_mermaid

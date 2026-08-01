@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from statem.schema import ExecutionContext, Signal
+    from statem.schema import Context, Signal
 
 
 def make_session() -> dict[str, Any]:
@@ -11,37 +11,37 @@ def make_session() -> dict[str, Any]:
     return {"app": {}, "user": {}}
 
 
-def sync_action(ctx: ExecutionContext, signal: Signal) -> None:
+def sync_action(ctx: Context, signal: Signal) -> None:
     return None
 
 
-async def async_action(ctx: ExecutionContext, signal: Signal) -> None:
+async def async_action(ctx: Context, signal: Signal) -> None:
     return None
 
 
-def action_returns_value(ctx: ExecutionContext, signal: Signal) -> Any:
+def action_returns_value(ctx: Context, signal: Signal) -> Any:
     return "action-result"
 
 
-def action_raises(ctx: ExecutionContext, signal: Signal) -> None:
+def action_raises(ctx: Context, signal: Signal) -> None:
     raise ValueError("boom")
 
 
-def sync_guard_true(ctx: ExecutionContext, signal: Signal) -> bool:
+def sync_guard_true(ctx: Context, signal: Signal) -> bool:
     return True
 
 
-def sync_guard_false(ctx: ExecutionContext, signal: Signal) -> bool:
+def sync_guard_false(ctx: Context, signal: Signal) -> bool:
     return False
 
 
-async def async_guard_true(ctx: ExecutionContext, signal: Signal) -> bool:
+async def async_guard_true(ctx: Context, signal: Signal) -> bool:
     return True
 
 
-async def async_guard_false(ctx: ExecutionContext, signal: Signal) -> bool:
+async def async_guard_false(ctx: Context, signal: Signal) -> bool:
     return False
 
 
-def guard_non_bool(ctx: ExecutionContext, signal: Signal) -> str:
+def guard_non_bool(ctx: Context, signal: Signal) -> str:
     return "not-a-bool"

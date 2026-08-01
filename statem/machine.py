@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
@@ -8,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 from .schema import (
     ActionFn,
     ActionRegistry,
-    ExecutionContext,
+    Context,
     GuardFn,
     GuardRegistry,
     Signal,
@@ -28,7 +29,7 @@ class StateMachine(BaseModel):
 
     Build one with `from_dict`, then drive it with `await run(...)`. Instances are frozen and
     hold no per-run state, so a single `StateMachine` can safely process many concurrent runs --
-    all mutable state lives in the `ExecutionContext` created fresh for each `run()` call.
+    all mutable state lives in the `Context` created fresh for each `run()` call.
 
     Attributes:
         config: State name to `StateConfig` mapping -- the validated transition graph.
@@ -158,7 +159,9 @@ class StateMachine(BaseModel):
         Returns:
             The final state name after all transitions have settled.
         """
-        ctx = ExecutionContext(run_id=run_id, current_state=state_name, session=session)
+        if run_id is None:
+            run_id = uuid.uuid4().hex
+        ctx = Context(run_id=run_id, current_state=state_name, session=session)
         await self._check_always(ctx)
         items = (events,) if isinstance(events, Signal) else events
         for signal in items:
@@ -181,7 +184,7 @@ class StateMachine(BaseModel):
 
     # — Internals ——————————————————————————————————————————————————————————
 
-    async def _push_signal(self, ctx: ExecutionContext, signal: Signal) -> bool:
+    async def _push_signal(self, ctx: Context, signal: Signal) -> bool:
         current = ctx.current_state
         transitions = self._transition_table.get((current, signal.event)) or self._transition_table.get((current, "*"))
         if not transitions:
@@ -206,7 +209,7 @@ class StateMachine(BaseModel):
             await self._check_always(ctx)
         return fired
 
-    async def _enter(self, ctx: ExecutionContext, state_name: str, signal: Signal) -> None:
+    async def _enter(self, ctx: Context, state_name: str, signal: Signal) -> None:
         current = ctx.current_state
         exit_actions = self.config[current].exit
         if exit_actions:
@@ -237,7 +240,7 @@ class StateMachine(BaseModel):
                 )
             await self.actions.execute_many(entry_actions, ctx, signal, source="entry")
 
-    async def _check_always(self, ctx: ExecutionContext) -> None:
+    async def _check_always(self, ctx: Context) -> None:
         for _ in range(_ALWAYS_MAX_DEPTH):
             current = ctx.current_state
             always = self.config[current].always
@@ -259,9 +262,7 @@ class StateMachine(BaseModel):
                 return
         raise RuntimeError(f"always-transition loop exceeded {_ALWAYS_MAX_DEPTH} hops at '{ctx.current_state}'")
 
-    async def _try_transitions(
-        self, ctx: ExecutionContext, transitions: list[TransitionConfig], signal: Signal
-    ) -> bool:
+    async def _try_transitions(self, ctx: Context, transitions: list[TransitionConfig], signal: Signal) -> bool:
         current = ctx.current_state
         for t in transitions:
             guard_result = await self.guards.evaluate(t.guard, ctx, signal, source="on")

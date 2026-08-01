@@ -5,7 +5,7 @@ import unittest
 import pydantic
 
 from statem import (
-    ExecutionContext,
+    Context,
     Signal,
     StateConfig,
     StateMachine,
@@ -188,7 +188,7 @@ class TestEnter(unittest.IsolatedAsyncioTestCase):
     async def test_exit_and_entry_actions_fire(self) -> None:
         cfg = {"idle": {"exit": ["on_exit"]}, "running": {"entry": ["on_entry"]}}
         machine = StateMachine.from_dict(cfg, action_dict={"on_exit": sync_action, "on_entry": sync_action})
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await machine._enter(ctx, "running", Signal(event="X"))
         self.assertEqual(ctx.current_state, "running")
         self.assertEqual(ctx.history, ["idle", "running"])
@@ -199,7 +199,7 @@ class TestEnter(unittest.IsolatedAsyncioTestCase):
     async def test_enter_skips_execute_many_when_no_actions(self) -> None:
         cfg = {"idle": {}, "running": {}}
         machine = StateMachine.from_dict(cfg)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await machine._enter(ctx, "running", Signal(event="X"))
         self.assertEqual(ctx.results, [])
         self.assertEqual(ctx.current_state, "running")
@@ -209,7 +209,7 @@ class TestCheckAlways(unittest.IsolatedAsyncioTestCase):
     async def test_no_always_returns_immediately(self) -> None:
         cfg = {"idle": {}}
         machine = StateMachine.from_dict(cfg)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await machine._check_always(ctx)
         self.assertEqual(ctx.current_state, "idle")
         self.assertEqual(ctx.results, [])
@@ -225,7 +225,7 @@ class TestCheckAlways(unittest.IsolatedAsyncioTestCase):
             guard_dict={"always_true": sync_guard_true},
             action_dict={"mark": sync_action},
         )
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await machine._check_always(ctx)
         self.assertEqual(ctx.current_state, "end")
         self.assertEqual(ctx.history, ["idle", "middle", "end"])
@@ -233,7 +233,7 @@ class TestCheckAlways(unittest.IsolatedAsyncioTestCase):
     async def test_all_guards_false_returns_via_for_else(self) -> None:
         cfg = {"idle": {"always": [{"target": "idle", "guard": "always_false"}]}}
         machine = StateMachine.from_dict(cfg, guard_dict={"always_false": sync_guard_false})
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await machine._check_always(ctx)
         self.assertEqual(ctx.current_state, "idle")
 
@@ -243,7 +243,7 @@ class TestCheckAlways(unittest.IsolatedAsyncioTestCase):
             "b": {"always": [{"target": "a", "guard": "always_true"}]},
         }
         machine = StateMachine.from_dict(cfg, guard_dict={"always_true": sync_guard_true})
-        ctx = ExecutionContext(current_state="a", session=make_session())
+        ctx = Context(current_state="a", session=make_session())
         with self.assertRaises(RuntimeError):
             await machine._check_always(ctx)
 
@@ -272,7 +272,7 @@ class TestTryTransitions(unittest.IsolatedAsyncioTestCase):
     async def test_all_candidates_fail_returns_false(self) -> None:
         cfg = {"idle": {"on": {"START": {"target": "running", "guard": "guard_false"}}}, "running": {}}
         machine = StateMachine.from_dict(cfg, guard_dict={"guard_false": sync_guard_false})
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         transitions = machine._transition_table[("idle", "START")]
         fired = await machine._try_transitions(ctx, transitions, Signal(event="START"))
         self.assertFalse(fired)
@@ -281,7 +281,7 @@ class TestTryTransitions(unittest.IsolatedAsyncioTestCase):
     async def test_action_raises_wrapped_as_transitionerror(self) -> None:
         cfg = {"idle": {"on": {"START": {"target": "running", "actions": ["boom"]}}}, "running": {}}
         machine = StateMachine.from_dict(cfg, action_dict={"boom": action_raises})
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         transitions = machine._transition_table[("idle", "START")]
         with self.assertRaises(TransitionError) as cm:
             await machine._try_transitions(ctx, transitions, Signal(event="START"))

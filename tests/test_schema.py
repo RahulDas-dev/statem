@@ -7,7 +7,7 @@ import pydantic
 
 from statem.schema import (
     ActionRegistry,
-    ExecutionContext,
+    Context,
     GuardError,
     GuardRegistry,
     ResultEntry,
@@ -44,26 +44,23 @@ class TestSignal(unittest.TestCase):
             signal.event = "STOP"  # type: ignore[misc]
 
 
-class TestExecutionContext(unittest.TestCase):
+class TestContext(unittest.TestCase):
     def test_post_init_seeds_history(self) -> None:
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         self.assertEqual(ctx.history, ["idle"])
         self.assertEqual(ctx.results, [])
 
-    def test_run_id_auto_generated_when_omitted(self) -> None:
-        ctx1 = ExecutionContext(current_state="idle", session=make_session())
-        ctx2 = ExecutionContext(current_state="idle", session=make_session())
-        self.assertIsInstance(ctx1.run_id, str)
-        self.assertTrue(ctx1.run_id)
-        self.assertNotEqual(ctx1.run_id, ctx2.run_id)
+    def test_run_id_defaults_to_none_when_omitted(self) -> None:
+        ctx = Context(current_state="idle", session=make_session())
+        self.assertIsNone(ctx.run_id)
 
     def test_run_id_explicit_value_preserved(self) -> None:
-        ctx = ExecutionContext(current_state="idle", session=make_session(), run_id="custom-id")
+        ctx = Context(current_state="idle", session=make_session(), run_id="custom-id")
         self.assertEqual(ctx.run_id, "custom-id")
 
     def test_session_stored_as_is_regardless_of_type(self) -> None:
         sentinel = object()
-        ctx = ExecutionContext(current_state="idle", session=sentinel)
+        ctx = Context(current_state="idle", session=sentinel)
         self.assertIs(ctx.session, sentinel)
 
 
@@ -87,7 +84,7 @@ class TestActionRegistry(unittest.IsolatedAsyncioTestCase):
     async def test_execute_sync_fn(self) -> None:
         registry = ActionRegistry()
         registry.register("noop", sync_action)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await registry.execute("noop", ctx, Signal(event="X"), source="on")
         self.assertEqual(len(ctx.results), 1)
         self.assertEqual(
@@ -98,20 +95,20 @@ class TestActionRegistry(unittest.IsolatedAsyncioTestCase):
     async def test_execute_async_fn(self) -> None:
         registry = ActionRegistry()
         registry.register("aio", async_action)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await registry.execute("aio", ctx, Signal(event="X"), source="entry")
         self.assertEqual(ctx.results[0].source, "entry")
 
     async def test_execute_records_return_value(self) -> None:
         registry = ActionRegistry()
         registry.register("val", action_returns_value)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await registry.execute("val", ctx, Signal(event="X"), source="on")
         self.assertEqual(ctx.results[0].value, "action-result")
 
     async def test_execute_unregistered_raises_keyerror(self) -> None:
         registry = ActionRegistry()
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         with self.assertRaises(KeyError):
             await registry.execute("missing", ctx, Signal(event="X"), source="on")
 
@@ -119,13 +116,13 @@ class TestActionRegistry(unittest.IsolatedAsyncioTestCase):
         registry = ActionRegistry()
         registry.register("first", sync_action)
         registry.register("second", async_action)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await registry.execute_many(["first", "second"], ctx, Signal(event="X"), source="exit")
         self.assertEqual([r.name for r in ctx.results], ["first", "second"])
 
     async def test_execute_many_empty_noop(self) -> None:
         registry = ActionRegistry()
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         await registry.execute_many([], ctx, Signal(event="X"), source="on")
         self.assertEqual(ctx.results, [])
 
@@ -146,21 +143,21 @@ class TestGuardRegistry(unittest.IsolatedAsyncioTestCase):
 
     async def test_evaluate_none_guard_returns_true_without_result_entry(self) -> None:
         registry = GuardRegistry()
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         result = await registry.evaluate(None, ctx, Signal(event="X"), source="on")
         self.assertTrue(result)
         self.assertEqual(ctx.results, [])
 
     async def test_evaluate_unregistered_raises_keyerror(self) -> None:
         registry = GuardRegistry()
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         with self.assertRaises(KeyError):
             await registry.evaluate("missing", ctx, Signal(event="X"), source="on")
 
     async def test_evaluate_sync_true(self) -> None:
         registry = GuardRegistry()
         registry.register("g", sync_guard_true)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         result = await registry.evaluate("g", ctx, Signal(event="X"), source="on")
         self.assertTrue(result)
         self.assertEqual(ctx.results[0], ResultEntry(state="idle", source="on", kind="guard", name="g", value=True))
@@ -168,28 +165,28 @@ class TestGuardRegistry(unittest.IsolatedAsyncioTestCase):
     async def test_evaluate_sync_false(self) -> None:
         registry = GuardRegistry()
         registry.register("g", sync_guard_false)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         result = await registry.evaluate("g", ctx, Signal(event="X"), source="on")
         self.assertFalse(result)
 
     async def test_evaluate_async_true(self) -> None:
         registry = GuardRegistry()
         registry.register("g", async_guard_true)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         result = await registry.evaluate("g", ctx, Signal(event="X"), source="always")
         self.assertTrue(result)
 
     async def test_evaluate_async_false(self) -> None:
         registry = GuardRegistry()
         registry.register("g", async_guard_false)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         result = await registry.evaluate("g", ctx, Signal(event="X"), source="always")
         self.assertFalse(result)
 
     async def test_evaluate_non_bool_raises_guarderror(self) -> None:
         registry = GuardRegistry()
         registry.register("g", guard_non_bool)
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         with self.assertRaises(GuardError):
             await registry.evaluate("g", ctx, Signal(event="X"), source="on")
 
@@ -217,9 +214,7 @@ class TestStateConfigNormalization(unittest.TestCase):
         self.assertEqual(cfg.on["START"], [TransitionConfig(target="running", guard="can_start")])
 
     def test_on_list_mixed(self) -> None:
-        cfg = StateConfig.model_validate(
-            {"on": {"START": ["running", {"target": "error", "guard": "failed"}]}}
-        )
+        cfg = StateConfig.model_validate({"on": {"START": ["running", {"target": "error", "guard": "failed"}]}})
         self.assertEqual(
             cfg.on["START"],
             [TransitionConfig(target="running"), TransitionConfig(target="error", guard="failed")],

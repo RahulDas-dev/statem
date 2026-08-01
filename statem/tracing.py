@@ -4,7 +4,7 @@ from string import Template
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from .schema import ExecutionContext
+    from .schema import Context
 
 _DIVIDER: Final[str] = "--------------------------------------------------------------------------------"
 _SRC_W: Final[int] = 6
@@ -17,7 +17,7 @@ _HOP_BLOCK_TEMPLATE: Final[Template] = Template("hop $n: $from_state -> $to_stat
 _FINAL_BLOCK_TEMPLATE: Final[Template] = Template("Final state: $state\n$content$divider")
 
 
-def show_transitions(ctx: ExecutionContext) -> str:
+def show_transitions(ctx: Context) -> str:
     """Return a human-readable summary of every transition in execution order.
 
     Iterates `ctx.results` (a `list[ResultEntry]`) which preserves the
@@ -53,7 +53,7 @@ def show_transitions(ctx: ExecutionContext) -> str:
     )
 
 
-def _render_body(ctx: ExecutionContext) -> str:
+def _render_body(ctx: Context) -> str:
     """Build the per-hop content that fills `$body`."""
     blocks: list[str] = []
 
@@ -81,7 +81,7 @@ def _render_body(ctx: ExecutionContext) -> str:
     return "".join(blocks).rstrip("\n")
 
 
-def _format_state_section(state: str, ctx: ExecutionContext) -> str:
+def _format_state_section(state: str, ctx: Context) -> str:
     """Render entries for *state* in execution order from `ctx.results`."""
     entries = [r for r in ctx.results if r.state == state]
     if not entries:

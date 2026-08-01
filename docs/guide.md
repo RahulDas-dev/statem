@@ -33,7 +33,7 @@ guard/action name must be registered too.
 Both are plain Python callables — sync or async — taking `(ctx, signal)`:
 
 ```python
-def can_start(ctx, signal) -> bool: ...          # guards must return bool
+def can_start(ctx, signal) -> bool: ...  # guards must return bool
 async def create_order(ctx, signal) -> None: ...  # actions may return anything (or nothing)
 ```
 
@@ -54,7 +54,7 @@ All arguments are keyword-only.
 - `events` — a single `Signal`, a list of `Signal`s, or `[]` to only resolve pending
   `always`-transitions for the current state.
 - `session` — **any object you want.** The engine never inspects or mutates its shape; it's
-  simply attached to the per-run `ExecutionContext` (`ctx.session`) so your guards/actions can
+  simply attached to the per-run `Context` (`ctx.session`) so your guards/actions can
   read and mutate whatever they need.
 - Returns the final state name once every signal has been processed and all pending
   `always`-transitions have settled.
@@ -79,8 +79,51 @@ Every guard/action evaluated during a `run()` call is recorded, in order, on
 `ctx.results` (a list of `ResultEntry`). [`show_transitions(ctx)`](api.md#statem.show_transitions)
 renders that trace as a readable hop-by-hop report — useful for debugging why a machine ended up
 where it did. Note `run()` itself only returns the final state name; to inspect the trace, work
-with an `ExecutionContext` directly (as the test suite does) or rely on the `run_id`-tagged log
+with a `Context` directly (as the test suite does) or rely on the `run_id`-tagged log
 output.
+
+## Visualizing the graph
+
+[`to_mermaid(machine, initial=None)`](api.md#statem.to_mermaid) walks `machine.config` and returns
+a Mermaid `stateDiagram-v2` diagram source string — pure text, no extra dependency. Paste the
+result into a ` ```mermaid ` fence and it renders natively in GitHub READMEs, MkDocs Material
+(including this site), VS Code, and Jupyter.
+
+```python
+from statem import StateMachine, to_mermaid
+
+config = {
+    "idle": {"on": {"START": {"target": "running", "guard": "can_start"}}},
+    "running": {"on": {"STOP": "idle"}},
+}
+machine = StateMachine.from_dict(config, guard_dict={"can_start": lambda ctx, signal: True})
+print(to_mermaid(machine, initial="idle"))
+```
+
+Output:
+
+```text
+stateDiagram-v2
+    [*] --> idle
+    idle --> running: START [can_start]
+    running --> idle: STOP
+```
+
+Which renders as:
+
+```mermaid
+stateDiagram-v2
+    [*] --> idle
+    idle --> running: START [can_start]
+    running --> idle: STOP
+```
+
+A guard-chain (multiple candidates for one event) produces multiple labeled edges from the same
+state, and `always`/`error_state` get their own `always`/`error`-labeled edges — see the
+[bank teller bot](examples.md#bank-teller-bot-examplesbankpy) for a richer diagram that shows all
+of this at once. `initial`, if given and present in `config`, prepends a `[*] --> initial` edge;
+`StateMachine` itself has no notion of an initial state (that's chosen fresh by the caller on
+every `run()` call), so it's opt-in.
 
 ## Further reading
 

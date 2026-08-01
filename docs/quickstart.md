@@ -42,17 +42,11 @@ Walking through what happened:
    `"running"`.
 3. The final state name is returned as a plain string.
 
-## A fuller example
+## Fuller examples
 
-[`examples/baking/example.py`](https://github.com/RahulDas-dev/statem/blob/main/examples/baking/example.py)
-in the repository builds a small bakery process (`idle → mixing → baking → cooling → done`) that
-exercises guards, actions, an `error_state` fallback, and an `always`-transition that
-auto-advances `cooling → done` once the oven has cooled — all triggered by a single `TIMER_DONE`
-signal. Run it with:
-
-```bash
-uv run python examples/baking/example.py
-```
+See the [Examples](examples.md) page for two full, runnable scripts shown in-line: a bakery
+process (`examples/bread.py`) and a richer bank-teller bot (`examples/bank.py`) that exercises
+every hook the engine has, including `error_state` recovering from a real exception.
 
 See the [Guide](guide.md) for what each config field (`on`, `always`, `entry`, `exit`,
 `error_state`) does, and the [API Reference](api.md) for the full public surface.

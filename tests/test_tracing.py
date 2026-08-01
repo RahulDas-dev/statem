@@ -2,21 +2,21 @@ from __future__ import annotations
 
 import unittest
 
-from statem import ExecutionContext, ResultEntry, show_transitions
-from statem.utility import _DIVIDER
+from statem import Context, ResultEntry, show_transitions
+from statem.tracing import _DIVIDER
 from tests.helpers import make_session
 
 
 class TestShowTransitions(unittest.TestCase):
     def test_no_transitions_zero_hops_plural(self) -> None:
-        ctx = ExecutionContext(current_state="idle", session=make_session())
+        ctx = Context(current_state="idle", session=make_session())
         output = show_transitions(ctx)
         self.assertTrue(output.startswith("Transitions (0 hops):"))
         self.assertIn("Final state: idle", output)
         self.assertNotIn("hop 1:", output)
 
     def test_single_hop_singular_and_source_dedup(self) -> None:
-        ctx = ExecutionContext(current_state="running", session=make_session())
+        ctx = Context(current_state="running", session=make_session())
         ctx.history = ["idle", "running"]
         ctx.results = [
             ResultEntry(state="idle", source="on", kind="guard", name="g1", value="rawvalue"),
@@ -46,7 +46,7 @@ class TestShowTransitions(unittest.TestCase):
         self.assertTrue(entry_line.strip().startswith("entry"))
 
     def test_multi_hop_plural_and_empty_state_section(self) -> None:
-        ctx = ExecutionContext(current_state="c", session=make_session())
+        ctx = Context(current_state="c", session=make_session())
         ctx.history = ["a", "b", "c"]
         ctx.results = [ResultEntry(state="a", source="on", kind="action", name="act", value=None)]
 

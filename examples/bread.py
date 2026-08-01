@@ -1,3 +1,4 @@
+# ruff: noqa: ARG001
 """Runnable example: a bakery process modeled as a StateMachine.
 
 Demonstrates:
@@ -13,7 +14,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from statem import ExecutionContext, Signal, StateMachine
+from statem import Context, Signal, StateMachine
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -25,30 +26,30 @@ class BakingSession:
     log: list[str] = field(default_factory=list)
 
 
-def check_ingredients(ctx: ExecutionContext, signal: Signal) -> None:
+def check_ingredients(ctx: Context[BakingSession], signal: Signal) -> None:
     ctx.session.ingredients_checked = True
     ctx.session.log.append("ingredients checked")
 
 
-def ingredients_ready(ctx: ExecutionContext, signal: Signal) -> bool:
+def ingredients_ready(ctx: Context[BakingSession], signal: Signal) -> bool:
     return ctx.session.ingredients_checked
 
 
-def preheat_oven(ctx: ExecutionContext, signal: Signal) -> None:
+def preheat_oven(ctx: Context[BakingSession], signal: Signal) -> None:
     ctx.session.oven_temp_c = 180
     ctx.session.log.append("oven preheated to 180C")
 
 
-def start_cooling(ctx: ExecutionContext, signal: Signal) -> None:
+def start_cooling(ctx: Context[BakingSession], signal: Signal) -> None:
     ctx.session.oven_temp_c = 25
     ctx.session.log.append("cake pulled, cooling started")
 
 
-def oven_is_cool(ctx: ExecutionContext, signal: Signal) -> bool:
+def oven_is_cool(ctx: Context[BakingSession], signal: Signal) -> bool:
     return ctx.session.oven_temp_c <= 30
 
 
-def plate_cake(ctx: ExecutionContext, signal: Signal) -> None:
+def plate_cake(ctx: Context[BakingSession], signal: Signal) -> None:
     ctx.session.log.append("cake plated")
 
 

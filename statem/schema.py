@@ -1,12 +1,13 @@
 import inspect
 import logging
-import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any, Literal, NamedTuple, TypeAlias
+from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class Signal:
     data: dict[str, Any] = field(default_factory=dict)
 
 
-Tsource: TypeAlias = Literal["on", "always", "entry", "exit"]
+HookSource: TypeAlias = Literal["on", "always", "entry", "exit"]
 
 
 class ResultEntry(NamedTuple):
@@ -50,22 +51,29 @@ class ResultEntry(NamedTuple):
     """
 
     state: str
-    source: Tsource
+    source: HookSource
     kind: Literal["guard", "action"]
     name: str
     value: Any
 
 
 @dataclass(slots=True, kw_only=True)
-class ExecutionContext:
+class Context(Generic[T]):
     """Short-lived execution context passed to every action and guard during one `run()` call.
 
     Created at the start of `StateMachine.run` and discarded when it returns. The machine updates
     `current_state` as transitions fire. All fields are keyword-only.
 
+    Generic over `T`, the type of `session`. `Context` used bare (unparameterized) behaves exactly
+    as before -- `session` types as `Any`. Guards/actions that want typed access to their own
+    session shape can annotate their `ctx` parameter as `Context[BankSession]` (or whatever their
+    session type is) to get full type-checking and autocomplete on `ctx.session`.
+
     Attributes:
-        run_id: Correlation id for this `run()` call, used in log lines. If not provided (left as
-            `None`), a `uuid4().hex` string is generated automatically in `__post_init__`.
+        run_id: Correlation id for this `run()` call, used in log lines. `None` if the caller
+            didn't supply one -- `StateMachine.run()` is responsible for generating one (a
+            `uuid4().hex` string) before constructing this object; `Context` itself just stores
+            whatever it's given.
         current_state: Name of the state the machine is currently in; updated by the engine as
             each transition fires.
         session: Caller-owned, opaque payload of any shape; the engine never inspects it, only
@@ -78,27 +86,25 @@ class ExecutionContext:
 
     run_id: str | None = None
     current_state: str
-    session: Any
+    session: T
     history: list[str] = field(init=False)
     results: list[ResultEntry] = field(init=False, default_factory=list)
 
     def __post_init__(self) -> None:
         self.history = [self.current_state]
-        if self.run_id is None:
-            self.run_id = uuid.uuid4().hex
 
 
 # — Callable type aliases ————————————————————————————————————————————————
 
-ActionFn: TypeAlias = Callable[[ExecutionContext, Signal], Awaitable[Any] | Any]
+ActionFn: TypeAlias = Callable[[Context, Signal], Awaitable[Any] | Any]
 
-GuardFn: TypeAlias = Callable[[ExecutionContext, Signal], bool] | Callable[[ExecutionContext, Signal], Awaitable[bool]]
+GuardFn: TypeAlias = Callable[[Context, Signal], bool] | Callable[[Context, Signal], Awaitable[bool]]
 
 
 # — Registries ——————————————————————————————————————————————————————————
 
 
-class RegEntry(NamedTuple):
+class _RegEntry(NamedTuple):
     """Internal registry entry: pairs a callable with its async flag, cached at registration time."""
 
     fn: Callable[..., Any]
@@ -111,11 +117,11 @@ class ActionRegistry:
     __slots__ = ("_fns",)
 
     def __init__(self) -> None:
-        self._fns: dict[str, RegEntry] = {}
+        self._fns: dict[str, _RegEntry] = {}
 
     def register(self, name: str, fn: ActionFn) -> None:
         """Register a single named action function (sync or async)."""
-        self._fns[name] = RegEntry(fn=fn, is_async=inspect.iscoroutinefunction(fn))
+        self._fns[name] = _RegEntry(fn=fn, is_async=inspect.iscoroutinefunction(fn))
 
     def register_many(self, actions: dict[str, ActionFn]) -> None:
         """Register multiple named action functions at once."""
@@ -132,7 +138,7 @@ class ActionRegistry:
     def __len__(self) -> int:
         return len(self._fns)
 
-    async def execute(self, name: str, ctx: ExecutionContext, signal: Signal, source: Tsource) -> None:
+    async def execute(self, name: str, ctx: Context, signal: Signal, source: HookSource) -> None:
         """Execute a single named action. Raises `KeyError` if not registered."""
         if name not in self._fns:
             raise KeyError(f"'{name}' not registered")
@@ -143,9 +149,9 @@ class ActionRegistry:
     async def execute_many(
         self,
         names: list[str],
-        ctx: ExecutionContext,
+        ctx: Context,
         signal: Signal,
-        source: Literal["on", "always", "entry", "exit"],
+        source: HookSource,
     ) -> None:
         """Execute actions in order, awaiting each one."""
         for name in names:
@@ -161,11 +167,11 @@ class GuardRegistry:
     __slots__ = ("_fns",)
 
     def __init__(self) -> None:
-        self._fns: dict[str, RegEntry] = {}
+        self._fns: dict[str, _RegEntry] = {}
 
     def register(self, name: str, fn: GuardFn) -> None:
         """Register a single named guard function (sync or async)."""
-        self._fns[name] = RegEntry(fn=fn, is_async=inspect.iscoroutinefunction(fn))
+        self._fns[name] = _RegEntry(fn=fn, is_async=inspect.iscoroutinefunction(fn))
 
     def register_many(self, guards: dict[str, GuardFn]) -> None:
         """Register multiple named guard functions at once."""
@@ -182,7 +188,7 @@ class GuardRegistry:
     def __len__(self) -> int:
         return len(self._fns)
 
-    async def evaluate(self, name: str | None, ctx: ExecutionContext, signal: Signal, source: Tsource) -> bool:
+    async def evaluate(self, name: str | None, ctx: Context, signal: Signal, source: HookSource) -> bool:
         """Evaluate a guard. Returns `True` if `name` is `None` (no guard = pass)."""
         if name is None:
             return True
