@@ -1,20 +1,20 @@
 # Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+statem-py/**/__pycache__/
+statem-py/**/*.py[oc]
+statem-py/build/
+statem-py/dist/
+statem-py/wheels/
+statem-py/*.egg-info
 
 # Virtual environments
-.venv
-.ruff_cache
+statem-py/.venv
+statem-py/.ruff_cache
 
 # Docs build output
-site/
+statem-py/site/
 
 # Coverage
-.coverage
+statem-py/.coverage
 
 # Added by cargo
 
