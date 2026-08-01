@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: statem-py
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +27,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dist
-          path: dist/
+          path: statem-py/dist/
 
   publish:
     needs: build

@@ -9,7 +9,7 @@ functions, registered by name.
 [![PyPI](https://img.shields.io/pypi/v/statem)](https://pypi.org/project/statem/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/statem)](https://pypi.org/project/statem/)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/RahulDas-dev/statem)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
 
 Full documentation: **<https://rahuldas-dev.github.io/statem/>**
 
@@ -122,4 +122,4 @@ uv run ruff check tests statem
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](../LICENSE).

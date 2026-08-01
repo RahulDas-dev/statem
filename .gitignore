@@ -15,4 +15,7 @@ site/
 
 # Coverage
 .coverage
-.claude
+
+# Added by cargo
+
+statem-rs/target
