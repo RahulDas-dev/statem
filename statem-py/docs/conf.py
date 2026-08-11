@@ -2,6 +2,11 @@
 
 Source lives in this directory as MyST Markdown (not reStructuredText) so the existing
 hand-written `.md` pages didn't need rewriting when the project moved off MkDocs.
+
+Theme/layout (Alabaster, the `github_banner` ribbon, the custom sidebar, `FlaskyStyle`
+Pygments colors) deliberately mirrors https://requests.readthedocs.io/ -- see
+`docs/_templates/sidebar.html` and `docs/_pygments/flasky_style.py` (the latter vendored
+verbatim from the Requests project, MIT-licensed) for the pieces that aren't just config.
 """
 
 from __future__ import annotations
@@ -10,6 +15,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(".."))
+sys.path.insert(0, os.path.abspath("_pygments"))
 
 project = "statem"
 copyright = "2026, RahulDas-dev"  # noqa: A001
@@ -55,8 +61,34 @@ autodoc_typehints = "description"
 autodoc_mock_imports = ["ag_ui", "jsonpatch"]
 
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "_pygments", "Thumbs.db", ".DS_Store"]
 
-html_theme = "furo"
+# Pygments code-highlighting palette -- see docs/_pygments/flasky_style.py.
+pygments_style = "flasky_style.FlaskyStyle"
+
+# Alabaster ships with Sphinx itself (no extra dependency), and is what Requests' docs
+# actually use -- see the module docstring above.
+html_theme = "alabaster"
+html_theme_options = {
+    "show_powered_by": False,
+    "github_user": "RahulDas-dev",
+    "github_repo": "statem",
+    "github_banner": True,
+    "show_related": False,
+    "note_bg": "#FFF59C",
+}
 html_title = "statem"
-html_static_path = []
+html_static_path = ["_static"]
+html_logo = "_static/statem-logo.svg"
+html_favicon = "_static/statem-favicon.png"
+html_show_sourcelink = False
+html_show_sphinx = False
+
+# "sidebar.html" (in docs/_templates/) replaces Alabaster's default "about.html" -- same
+# structure Requests uses: logo/star-button/blurb up top, curated links, then localtoc +
+# relations + searchbox for in-page navigation. ("sourcelink.html" is omitted since
+# html_show_sourcelink=False already hides it -- Requests keeps it listed but it's a no-op.)
+html_sidebars = {
+    "index": ["sidebar.html", "searchbox.html"],
+    "**": ["sidebar.html", "localtoc.html", "relations.html", "searchbox.html"],
+}
