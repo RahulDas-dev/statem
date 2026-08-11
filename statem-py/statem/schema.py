@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import logging
 from collections.abc import Awaitable, Callable
@@ -74,6 +75,10 @@ class Context(Generic[T]):
             didn't supply one -- `StateMachine.run()` is responsible for generating one (a
             `uuid4().hex` string) before constructing this object; `Context` itself just stores
             whatever it's given.
+        thread_id: Correlation id for the broader conversation/session this run belongs to,
+            distinct from `run_id` (one thread can span many runs). `None` if the caller didn't
+            supply one -- `StateMachine.run()`/`StateMachine.stream()` generate one the same way
+            they generate `run_id`; `Context` itself just stores whatever it's given.
         current_state: Name of the state the machine is currently in; updated by the engine as
             each transition fires.
         session: Caller-owned, opaque payload of any shape; the engine never inspects it, only
@@ -82,16 +87,33 @@ class Context(Generic[T]):
             is always the initial state.
         results: Ordered list of `ResultEntry` for every guard and action executed, in the exact
             order they fired during this `run()` call.
+        _event_q: Internal -- set by `StateMachine.stream()` to an `asyncio.Queue` it drains to
+            yield AG-UI events; left `None` by `StateMachine.run()`. Not meant for guards/actions
+            to use directly; check `is_stream` instead of reading this field.
+        _state_accessor: Internal -- set by `StateMachine.stream()` from its `state_accessor`
+            argument. Derives the dict broadcast via `STATE_SNAPSHOT`/`STATE_DELTA` from
+            `session`; `None` means the default `{"current_state": ...}` view is used instead.
+        _state_snapshot: Internal -- the last dict broadcast via `STATE_SNAPSHOT`/`STATE_DELTA`,
+            kept so `StateMachine.stream()` can diff against it to build the next `STATE_DELTA`.
     """
 
     run_id: str | None = None
+    thread_id: str | None = None
     current_state: str
     session: T
     history: list[str] = field(init=False)
     results: list[ResultEntry] = field(init=False, default_factory=list)
+    _event_q: asyncio.Queue[Any] | None = field(default=None, repr=False)
+    _state_accessor: Callable[[T], dict[str, Any]] | None = field(default=None, repr=False)
+    _state_snapshot: dict[str, Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.history = [self.current_state]
+
+    @property
+    def is_stream(self) -> bool:
+        """`True` when this context was created by `StateMachine.stream()`, `False` for `run()`."""
+        return self._event_q is not None
 
 
 # — Callable type aliases ————————————————————————————————————————————————
@@ -279,14 +301,13 @@ class StateConfig(BaseModel):
         Excludes the `"*"` wildcard entry -- use `accepts_wildcard` to check whether the state
         has a catch-all handler.
 
-        Example:
-            ```python
+        Example::
+
             cfg = StateConfig.model_validate({
                 "on": {"START": "running", "CANCEL": "idle", "*": "error"}
             })
             cfg.available_events  # ["START", "CANCEL"]
             cfg.accepts_wildcard  # True
-            ```
         """
         return [name for name in self.on if name != "*"]
 

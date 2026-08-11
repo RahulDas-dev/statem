@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
@@ -12,11 +13,17 @@ from .schema import (
     Context,
     GuardFn,
     GuardRegistry,
+    ResultEntry,
     Signal,
     StateConfig,
     TransitionConfig,
     TransitionError,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable
+
+    from ag_ui.core import BaseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +148,7 @@ class StateMachine(BaseModel):
         self,
         *,
         run_id: str | None = None,
+        thread_id: str | None = None,
         state_name: str,
         events: Signal | list[Signal],
         session: Any,
@@ -150,6 +158,9 @@ class StateMachine(BaseModel):
         Args:
             run_id:     Correlation id for this run, used in log lines. If not provided (left as
                         `None`), a `uuid4().hex` string is generated automatically.
+            thread_id:  Correlation id for the broader conversation/session this run belongs to
+                        (one thread can span many runs). If not provided, a `uuid4().hex` string
+                        is generated automatically, same as `run_id`.
             state_name: Current state name (e.g. `"idle"`).
             events:     Single `Signal`, list of `Signal`s, or `[]` to
                         only resolve `always` transitions for the current state.
@@ -161,7 +172,9 @@ class StateMachine(BaseModel):
         """
         if run_id is None:
             run_id = uuid.uuid4().hex
-        ctx = Context(run_id=run_id, current_state=state_name, session=session)
+        if thread_id is None:
+            thread_id = uuid.uuid4().hex
+        ctx = Context(run_id=run_id, thread_id=thread_id, current_state=state_name, session=session)
         await self._check_always(ctx)
         items = (events,) if isinstance(events, Signal) else events
         for signal in items:
@@ -174,6 +187,100 @@ class StateMachine(BaseModel):
             await self._push_signal(ctx, signal)
         return ctx.current_state
 
+    async def stream(  # noqa: PLR0913 -- all keyword-only, mirrors `run`'s parameter set plus `state_accessor`
+        self,
+        *,
+        run_id: str | None = None,
+        thread_id: str | None = None,
+        state_name: str,
+        events: Signal | list[Signal],
+        session: Any,
+        state_accessor: Callable[[Any], dict[str, Any]] | None = None,
+    ) -> AsyncIterator[BaseEvent]:
+        """Like `run`, but yields AG-UI protocol events as the machine executes.
+
+        Drives the same engine as `run` (same guards, actions, transition rules) and has the
+        same effect on *session* -- this is an additive, alternate way to observe a run, not a
+        different execution path. Requires the `agui` extra: `pip install statem[agui]`.
+
+        A step = one state change (one hop), whether triggered by an `on` transition, an
+        `always` cascade hop, or an `error_state` fallback -- not one call to `stream()`. Each
+        step is fully self-contained, emitted in this order:
+
+        - `STEP_STARTED` (`step_name` is the triggering signal's event, or `"__always__"` for an
+          `always`-cascade hop).
+        - `STATE_SNAPSHOT`, taken right before this hop's actions run.
+        - `ACTIVITY_SNAPSHOT` for every guard and action result as it fires during this hop
+          (`content` carries `name`, hook `source`, and `result`). A guard evaluated but not
+          taken (e.g. an earlier candidate that failed) is reported the same way, just before its
+          step -- or the step before it -- opens.
+        - `STATE_DELTA` (RFC 6902 patch, via `jsonpatch.make_patch`, against this step's own
+          `STATE_SNAPSHOT`) -- skipped if this step didn't actually change the broadcast state.
+        - `STEP_FINISHED`.
+
+        A signal that matches no transition, or whose guard(s) all fail, produces no events at
+        all (no state change happened). `RUN_STARTED` / `RUN_FINISHED` / `RUN_ERROR` are never
+        emitted. An unhandled exception (e.g. an action error with no `error_state`, or a bad
+        guard return type) propagates to the caller from the generator itself, exactly as it
+        would from `run`.
+
+        Args:
+            run_id:         Correlation id for this run. Auto-generated if not provided.
+            thread_id:      Correlation id for the broader conversation/session this run belongs
+                            to (one thread can span many runs). Auto-generated if not provided,
+                            same as `run_id`.
+            state_name:     Current state name (e.g. `"idle"`).
+            events:         Single `Signal`, list of `Signal`s, or `[]` to only resolve `always`
+                            transitions for the current state.
+            session:        Caller-owned, opaque payload of any shape.
+            state_accessor: Derives the dict broadcast via `STATE_SNAPSHOT`/`STATE_DELTA` from
+                            *session* (e.g. `lambda session: session.to_dict()`). Called at the
+                            start and end of every step. Defaults to `{"current_state": <state
+                            name>}` when omitted.
+
+        Yields:
+            `ag_ui.core.BaseEvent` instances in execution order.
+        """
+        if run_id is None:
+            run_id = uuid.uuid4().hex
+        if thread_id is None:
+            thread_id = uuid.uuid4().hex
+
+        queue: asyncio.Queue[BaseEvent | None] = asyncio.Queue()
+        ctx = Context(
+            run_id=run_id,
+            thread_id=thread_id,
+            current_state=state_name,
+            session=session,
+            _event_q=queue,
+            _state_accessor=state_accessor,
+        )
+
+        async def _drive() -> None:
+            try:
+                await self._check_always(ctx)
+                items = (events,) if isinstance(events, Signal) else events
+                for signal in items:
+                    logger.info(
+                        "run_id=%s | state=%s | source=signal | event=%s",
+                        ctx.run_id,
+                        ctx.current_state,
+                        signal.event,
+                    )
+                    await self._push_signal(ctx, signal)
+            finally:
+                queue.put_nowait(None)
+
+        task = asyncio.ensure_future(_drive())
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                yield item
+        finally:
+            await task
+
     def available_events(self, state_name: str) -> list[str]:
         """Return the event names `state_name` can receive via `on`, or `[]` if the state is unknown.
 
@@ -183,6 +290,48 @@ class StateMachine(BaseModel):
         return list(self.config[state_name].on.keys()) if self.config.get(state_name, None) else []
 
     # — Internals ——————————————————————————————————————————————————————————
+
+    def _current_state_dict(self, ctx: Context) -> dict[str, Any]:
+        if ctx._state_accessor:  # noqa: SLF001
+            return ctx._state_accessor(ctx.session)  # noqa: SLF001
+        return {"current_state": ctx.current_state}
+
+    def _open_step(self, ctx: Context, step_name: str) -> None:
+        """Open one AG-UI step: `STEP_STARTED` followed immediately by a `STATE_SNAPSHOT`.
+
+        Resets `ctx._state_snapshot` to the state *right now* (before this hop's guard/actions
+        run) so `_close_step` can diff against it -- each step's `STATE_DELTA` reflects only what
+        changed during that step, not the whole stream.
+        """
+        if not ctx.is_stream:
+            return
+        from . import agui  # noqa: PLC0415 -- lazy so plain `import statem` never needs ag-ui-protocol
+
+        ctx._event_q.put_nowait(agui.step_started(step_name))  # noqa: SLF001
+        snapshot = self._current_state_dict(ctx)
+        ctx._state_snapshot = snapshot  # noqa: SLF001
+        ctx._event_q.put_nowait(agui.state_snapshot(snapshot))  # noqa: SLF001
+
+    def _close_step(self, ctx: Context, step_name: str) -> None:
+        """Close one AG-UI step: `STATE_DELTA` (if anything changed) then `STEP_FINISHED`."""
+        if not ctx.is_stream:
+            return
+        from . import agui  # noqa: PLC0415 -- lazy so plain `import statem` never needs ag-ui-protocol
+
+        new_state = self._current_state_dict(ctx)
+        patch = agui.diff_state(ctx._state_snapshot or {}, new_state)  # noqa: SLF001
+        ctx._state_snapshot = new_state  # noqa: SLF001
+        if patch:
+            ctx._event_q.put_nowait(agui.state_delta(patch))  # noqa: SLF001
+        ctx._event_q.put_nowait(agui.step_finished(step_name))  # noqa: SLF001
+
+    def _emit_activities(self, ctx: Context, entries: list[ResultEntry]) -> None:
+        if not ctx.is_stream or not entries:
+            return
+        from . import agui  # noqa: PLC0415 -- lazy so plain `import statem` never needs ag-ui-protocol
+
+        for entry in entries:
+            ctx._event_q.put_nowait(agui.activity(entry))  # noqa: SLF001
 
     async def _push_signal(self, ctx: Context, signal: Signal) -> bool:
         current = ctx.current_state
@@ -202,7 +351,9 @@ class StateMachine(BaseModel):
                 current,
                 error_state,
             )
+            self._open_step(ctx, signal.event)
             await self._enter(ctx, error_state, signal)
+            self._close_step(ctx, signal.event)
             fired = True
 
         if fired:
@@ -220,7 +371,9 @@ class StateMachine(BaseModel):
                     current,
                     name,
                 )
+            n_before = len(ctx.results)
             await self.actions.execute_many(exit_actions, ctx, signal, source="exit")
+            self._emit_activities(ctx, ctx.results[n_before:])
         logger.info(
             "run_id=%s | state=%s | source=enter | target=%s",
             ctx.run_id,
@@ -238,7 +391,9 @@ class StateMachine(BaseModel):
                     state_name,
                     name,
                 )
+            n_before = len(ctx.results)
             await self.actions.execute_many(entry_actions, ctx, signal, source="entry")
+            self._emit_activities(ctx, ctx.results[n_before:])
 
     async def _check_always(self, ctx: Context) -> None:
         for _ in range(_ALWAYS_MAX_DEPTH):
@@ -246,8 +401,13 @@ class StateMachine(BaseModel):
             always = self.config[current].always
             if not always:
                 return
+            self._open_step(ctx, _ALWAYS_SIGNAL.event)
+            fired = False
             for t in always:
-                if await self.guards.evaluate(t.guard, ctx, _ALWAYS_SIGNAL, source="always"):
+                guard_result = await self.guards.evaluate(t.guard, ctx, _ALWAYS_SIGNAL, source="always")
+                if t.guard is not None:
+                    self._emit_activities(ctx, [ctx.results[-1]])
+                if guard_result:
                     logger.info(
                         "run_id=%s | state=%s | source=always | name=%s | target=%s",
                         ctx.run_id,
@@ -255,40 +415,52 @@ class StateMachine(BaseModel):
                         t.guard,
                         t.target,
                     )
+                    n_before = len(ctx.results)
                     await self.actions.execute_many(t.actions, ctx, _ALWAYS_SIGNAL, source="always")
+                    self._emit_activities(ctx, ctx.results[n_before:])
                     await self._enter(ctx, t.target, _ALWAYS_SIGNAL)
+                    fired = True
                     break
-            else:
+            self._close_step(ctx, _ALWAYS_SIGNAL.event)
+            if not fired:
                 return
         raise RuntimeError(f"always-transition loop exceeded {_ALWAYS_MAX_DEPTH} hops at '{ctx.current_state}'")
 
     async def _try_transitions(self, ctx: Context, transitions: list[TransitionConfig], signal: Signal) -> bool:
         current = ctx.current_state
-        for t in transitions:
-            guard_result = await self.guards.evaluate(t.guard, ctx, signal, source="on")
-            logger.info(
-                "run_id=%s | state=%s | source=guard | name=%s | result=%s",
-                ctx.run_id,
-                current,
-                t.guard or "none",
-                guard_result,
-            )
-            if guard_result:
+        self._open_step(ctx, signal.event)
+        try:
+            for t in transitions:
+                guard_result = await self.guards.evaluate(t.guard, ctx, signal, source="on")
                 logger.info(
-                    "run_id=%s | state=%s | source=transition | event=%s | target=%s | actions=%s",
+                    "run_id=%s | state=%s | source=guard | name=%s | result=%s",
                     ctx.run_id,
                     current,
-                    signal.event,
-                    t.target,
-                    t.actions,
+                    t.guard or "none",
+                    guard_result,
                 )
-                try:
-                    await self.actions.execute_many(t.actions, ctx, signal, source="on")
-                except Exception as exc:
-                    raise TransitionError(f"Action failed in '{ctx.current_state}'") from exc
-                await self._enter(ctx, t.target, signal)
-                return True
-        return False
+                if t.guard is not None:
+                    self._emit_activities(ctx, [ctx.results[-1]])
+                if guard_result:
+                    logger.info(
+                        "run_id=%s | state=%s | source=transition | event=%s | target=%s | actions=%s",
+                        ctx.run_id,
+                        current,
+                        signal.event,
+                        t.target,
+                        t.actions,
+                    )
+                    try:
+                        n_before = len(ctx.results)
+                        await self.actions.execute_many(t.actions, ctx, signal, source="on")
+                        self._emit_activities(ctx, ctx.results[n_before:])
+                    except Exception as exc:
+                        raise TransitionError(f"Action failed in '{ctx.current_state}'") from exc
+                    await self._enter(ctx, t.target, signal)
+                    return True
+            return False
+        finally:
+            self._close_step(ctx, signal.event)
 
     def __repr__(self) -> str:
         states = list(self.config.keys())

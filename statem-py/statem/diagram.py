@@ -18,8 +18,8 @@ def to_mermaid(machine: StateMachine, *, initial: str | None = None) -> str:
     multiple candidates for one event -- naturally produces multiple labeled edges from the same
     state, which is the main payoff: it visualizes branching that a flat transition table hides.
 
-    Paste the result into a ```` ```mermaid ```` fence (GitHub, MkDocs Material, VS Code, and
-    Jupyter all render it natively) to view the diagram.
+    Paste the result into a Markdown "mermaid" code fence (GitHub, Sphinx, VS Code, and Jupyter
+    all render it natively) to view the diagram.
 
     Args:
         machine: The `StateMachine` whose `config` to render.

@@ -11,16 +11,22 @@
 //! `Context::trace()` for a human-readable run report, and `StateMachine::diagram()` for a
 //! Mermaid `stateDiagram-v2` export.
 
+#[cfg(feature = "agui")]
+mod agui;
 mod diagram;
 mod machine;
 mod registry;
 mod schema;
 mod tracing;
 
+#[cfg(feature = "agui")]
+pub use agui::{ActivityContent, ActivitySnapshotEvent, AguiEvent, StateDeltaEvent, StateSnapshotEvent, StepFinishedEvent, StepStartedEvent};
 pub use diagram::Diagram;
 pub use machine::StateMachine;
 pub use registry::{Action, ActionRegistry, Guard, GuardRegistry};
 pub use schema::{
     BuildError, Context, HookSource, ResultEntry, ResultKind, RunError, Signal, StateConfig, TransitionConfig, ValidationError,
 };
+#[cfg(feature = "agui")]
+pub use schema::StateAccessor;
 pub use tracing::Trace;

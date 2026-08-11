@@ -1,7 +1,7 @@
 # Examples
 
-Two runnable, fully-tested example scripts live in
-[`examples/`](https://github.com/RahulDas-dev/statem/tree/main/examples) in the repository. Both
+Three runnable, fully-tested example scripts live in
+[`examples/`](https://github.com/RahulDas-dev/statem/tree/main/examples) in the repository. All
 are shown in full below, kept in sync automatically with the actual source files.
 
 ## Bakery process (`examples/bread.py`)
@@ -10,7 +10,7 @@ A small bakery process (`idle → mixing → baking → cooling → done`) that 
 actions, an `error_state` fallback, and an `always`-transition that auto-advances
 `cooling → done` once the oven has cooled — all triggered by a single `TIMER_DONE` signal.
 
-Its graph, rendered with [`to_mermaid`](api.md#statem.to_mermaid):
+Its graph, rendered with {py:func}`to_mermaid <statem.to_mermaid>`:
 
 ```mermaid
 stateDiagram-v2
@@ -26,8 +26,8 @@ stateDiagram-v2
 uv run python examples/bread.py
 ```
 
-```python
---8<-- "examples/bread.py"
+```{literalinclude} ../examples/bread.py
+:language: python
 ```
 
 ## Bank teller bot (`examples/bank.py`)
@@ -62,6 +62,46 @@ stateDiagram-v2
 uv run python examples/bank.py
 ```
 
-```python
---8<-- "examples/bank.py"
+```{literalinclude} ../examples/bank.py
+:language: python
+```
+
+## Pizza order bot (`examples/pizza.py`, streaming)
+
+The largest example: an order-to-delivery pizza bot (payment, quality-check retries, delivery
+retries, `CANCEL` escape hatches at multiple points) that also demonstrates
+[`stream()`](streaming.md) — `run_streaming_demo()` drives one signal through the machine and
+prints the raw AG-UI event sequence (`STEP_STARTED`, `STATE_SNAPSHOT`, `ACTIVITY_SNAPSHOT`,
+`STATE_DELTA`, `STEP_FINISHED`) as it happens, alongside two plain `run()` demos for comparison.
+Requires the `agui` extra (`pip install statem[agui]`) for the streaming portion only.
+
+```mermaid
+stateDiagram-v2
+    [*] --> order_received
+    order_received --> payment_processing: CONFIRM
+    payment_processing --> preparing: always [payment_approved]
+    payment_processing --> payment_failed: always [payment_declined]
+    payment_processing --> payment_failed: error
+    payment_failed --> payment_processing: RETRY_PAYMENT
+    payment_failed --> cancelled: CANCEL
+    preparing --> baking: always [prep_complete]
+    baking --> quality_check: BAKING_DONE
+    quality_check --> ready: always [quality_passed]
+    quality_check --> remaking: always [quality_failed]
+    remaking --> preparing: always
+    ready --> assigning_driver: DISPATCH
+    assigning_driver --> out_for_delivery: always [driver_found]
+    out_for_delivery --> delivered: DELIVERED
+    out_for_delivery --> delivery_failed: FAILED
+    out_for_delivery --> delivery_failed: error
+    delivery_failed --> assigning_driver: RETRY_DELIVERY
+    delivery_failed --> cancelled: CANCEL
+```
+
+```bash
+uv run python examples/pizza.py
+```
+
+```{literalinclude} ../examples/pizza.py
+:language: python
 ```

@@ -13,7 +13,7 @@ functions, registered by name.
 
 Full documentation: **<https://rahuldas-dev.github.io/statem/>**
 
-**[Install](#install) · [Quickstart](#quickstart) · [Hooks](#hooks) · [Visualizing](#visualizing) · [Why it's built this way](#why-its-built-this-way) · [Development](#development) · [License](#license)**
+**[Install](#install) · [Quickstart](#quickstart) · [Hooks](#hooks) · [Visualizing](#visualizing) · [Streaming](#streaming) · [Why it's built this way](#why-its-built-this-way) · [Development](#development) · [License](#license)**
 
 ## Install
 
@@ -53,9 +53,10 @@ asyncio.run(main())
 ```
 
 See [`examples/bread.py`](examples/bread.py) for a fuller example (guards,
-actions, `error_state`, and an `always`-transition), or
-[`examples/bank.py`](examples/bank.py) for a richer one that exercises
-every hook in one conversation, including `error_state` recovering from a real exception. The
+actions, `error_state`, and an `always`-transition), [`examples/bank.py`](examples/bank.py) for a
+richer one that exercises every hook in one conversation, including `error_state` recovering from
+a real exception, or [`examples/pizza.py`](examples/pizza.py) for the largest one, which also
+demonstrates [streaming](#streaming). The
 [guide](https://rahuldas-dev.github.io/statem/guide/) covers the full config shape.
 
 ## Hooks
@@ -76,7 +77,7 @@ there instead of propagating.
 ## Visualizing
 
 `to_mermaid(machine, initial=None)` renders `machine.config` as a Mermaid `stateDiagram-v2`
-string — no extra dependency, just text. GitHub, MkDocs, VS Code, and Jupyter all render it
+string — no extra dependency, just text. GitHub, Sphinx, VS Code, and Jupyter all render it
 natively:
 
 ```python
@@ -94,6 +95,27 @@ stateDiagram-v2
 
 See the [guide](https://rahuldas-dev.github.io/statem/guide/#visualizing-the-graph) for guard
 chains, `always`, and `error_state` rendering.
+
+## Streaming
+
+`run()` returns only once everything has settled. `stream()` drives the same engine — same
+guards, actions, and effect on `session` — but yields
+[AG-UI protocol](https://docs.ag-ui.com/) events (`STEP_STARTED`, `STATE_SNAPSHOT`,
+`ACTIVITY_SNAPSHOT`, `STATE_DELTA`, `STEP_FINISHED`) hop by hop as the machine runs, for UIs, SSE
+endpoints, or anything else that wants to observe a run in progress. It's purely additive — `run()`
+is unaffected — and requires the `agui` extra:
+
+```bash
+pip install statem[agui]
+```
+
+```python
+async for event in machine.stream(state_name="idle", events=Signal(event="START"), session={}):
+    print(event.type, event)
+```
+
+See the [streaming guide](https://rahuldas-dev.github.io/statem/streaming/) for the full event
+contract, the `state_accessor` option, and error propagation.
 
 ## Why it's built this way
 

@@ -4,40 +4,68 @@
 
 The machine itself, its per-run execution context, and the event that drives a transition.
 
-::: statem.StateMachine
+```{eval-rst}
+.. autoclass:: statem.StateMachine
+   :members:
+   :undoc-members:
 
-::: statem.Context
+.. autoclass:: statem.Context
+   :members:
+   :undoc-members:
 
-::: statem.Signal
+.. autoclass:: statem.Signal
+   :members:
+   :undoc-members:
+```
 
 ## Configuration
 
 The (Pydantic-validated) shapes that make up the `config` dict passed to `StateMachine.from_dict`.
 
-::: statem.StateConfig
+```{eval-rst}
+.. autoclass:: statem.StateConfig
+   :members:
+   :undoc-members:
 
-::: statem.TransitionConfig
+.. autoclass:: statem.TransitionConfig
+   :members:
+   :undoc-members:
+```
 
 ## Registries
 
 Where named guard/action callables are registered and looked up by the engine.
 
-::: statem.ActionRegistry
+```{eval-rst}
+.. autoclass:: statem.ActionRegistry
+   :members:
+   :undoc-members:
 
-::: statem.GuardRegistry
+.. autoclass:: statem.GuardRegistry
+   :members:
+   :undoc-members:
+```
 
 ## Errors
 
-::: statem.GuardError
+```{eval-rst}
+.. autoclass:: statem.GuardError
 
-::: statem.TransitionError
+.. autoclass:: statem.TransitionError
+```
 
 ## Tracing a run
 
-::: statem.ResultEntry
+```{eval-rst}
+.. autoclass:: statem.ResultEntry
+   :members:
+   :undoc-members:
 
-::: statem.show_transitions
+.. autofunction:: statem.show_transitions
+```
 
 ## Diagrams
 
-::: statem.to_mermaid
+```{eval-rst}
+.. autofunction:: statem.to_mermaid
+```

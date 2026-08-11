@@ -105,9 +105,33 @@ def my_guard(ctx: Context[MySession], signal: Signal) -> bool:
 ## Visualizing
 
 `to_mermaid(machine, initial=None)` renders `machine.config` as a Mermaid `stateDiagram-v2`
-string -- paste it into a ` ```mermaid ` fence (GitHub, MkDocs, VS Code, Jupyter all render it
+string -- paste it into a ` ```mermaid ` fence (GitHub, Sphinx, VS Code, Jupyter all render it
 natively). Useful for sanity-checking a graph you just built, especially guard chains, before
 wiring up actual guard/action functions.
+
+## Streaming (AG-UI events)
+
+`stream()` drives the exact same engine as `run()` -- same guards/actions, same effect on
+`session` -- but is an async generator yielding AG-UI protocol events instead of returning only
+the final state. Reach for it when the caller needs to observe a run in progress (a chat UI, an
+SSE endpoint), not when it just needs the end result -- `run()` is simpler and is what most state
+machines should use by default.
+
+```python
+async for event in machine.stream(state_name="idle", events=Signal(event="START"), session={}):
+    ...
+```
+
+- Requires the `agui` extra (`pip install statem[agui]`); plain `import statem` never needs it.
+- Takes the same keyword-only args as `run()`, plus `state_accessor: Callable[[session], dict]`
+  (optional) to control what `STATE_SNAPSHOT`/`STATE_DELTA` broadcast -- defaults to
+  `{"current_state": ...}` if omitted.
+- One AG-UI **step** = one hop (`on` transition, one `always` hop, or an `error_state` fallback),
+  not one signal -- a signal that triggers an `always` cascade produces multiple steps. Each step:
+  `STEP_STARTED` -> `STATE_SNAPSHOT` -> `ACTIVITY_SNAPSHOT` per guard/action that fired ->
+  `STATE_DELTA` (skipped if nothing changed) -> `STEP_FINISHED`.
+- No `RUN_STARTED`/`RUN_FINISHED`/`RUN_ERROR` events, ever. Exceptions propagate out of the
+  generator exactly as they would out of `run()`.
 
 ## When building a new state machine for the user
 

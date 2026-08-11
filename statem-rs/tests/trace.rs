@@ -3,7 +3,7 @@
 use statem_rs::{Context, HookSource, ResultEntry, ResultKind};
 
 fn ctx_with(history: Vec<&str>, results: Vec<ResultEntry>) -> Context<()> {
-    let mut ctx = Context::new(history[0], (), None);
+    let mut ctx = Context::new(history[0], (), None, None);
     ctx.history = history.into_iter().map(String::from).collect();
     ctx.results = results;
     ctx

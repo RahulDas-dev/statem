@@ -11,7 +11,7 @@ statem-py/.venv
 statem-py/.ruff_cache
 
 # Docs build output
-statem-py/site/
+statem-py/docs/_build/
 
 # Coverage
 statem-py/.coverage

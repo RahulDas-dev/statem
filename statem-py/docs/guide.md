@@ -76,7 +76,7 @@ logged); otherwise the `TransitionError` propagates to the caller.
 ## Tracing a run
 
 Every guard/action evaluated during a `run()` call is recorded, in order, on
-`ctx.results` (a list of `ResultEntry`). [`show_transitions(ctx)`](api.md#statem.show_transitions)
+`ctx.results` (a list of `ResultEntry`). {py:func}`show_transitions(ctx) <statem.show_transitions>`
 renders that trace as a readable hop-by-hop report — useful for debugging why a machine ended up
 where it did. Note `run()` itself only returns the final state name; to inspect the trace, work
 with a `Context` directly (as the test suite does) or rely on the `run_id`-tagged log
@@ -84,10 +84,10 @@ output.
 
 ## Visualizing the graph
 
-[`to_mermaid(machine, initial=None)`](api.md#statem.to_mermaid) walks `machine.config` and returns
+{py:func}`to_mermaid(machine, initial=None) <statem.to_mermaid>` walks `machine.config` and returns
 a Mermaid `stateDiagram-v2` diagram source string — pure text, no extra dependency. Paste the
-result into a ` ```mermaid ` fence and it renders natively in GitHub READMEs, MkDocs Material
-(including this site), VS Code, and Jupyter.
+result into a ` ```mermaid ` fence and it renders natively in GitHub READMEs, Sphinx
+(including this site, via `sphinxcontrib-mermaid`), VS Code, and Jupyter.
 
 ```python
 from statem import StateMachine, to_mermaid
@@ -124,6 +124,14 @@ state, and `always`/`error_state` get their own `always`/`error`-labeled edges �
 of this at once. `initial`, if given and present in `config`, prepends a `[*] --> initial` edge;
 `StateMachine` itself has no notion of an initial state (that's chosen fresh by the caller on
 every `run()` call), so it's opt-in.
+
+## Observing a run as it happens
+
+`run()` returns only once everything has settled. If a caller needs to see each hop as it
+happens — e.g. to stream progress to a UI — use [`stream()`](streaming.md) instead: same engine,
+same effect on `session`, but yields AG-UI protocol events (`STEP_STARTED`, `STATE_SNAPSHOT`,
+`ACTIVITY_SNAPSHOT`, `STATE_DELTA`, `STEP_FINISHED`) as it goes. See the
+[Streaming](streaming.md) page for the full event contract.
 
 ## Further reading
 

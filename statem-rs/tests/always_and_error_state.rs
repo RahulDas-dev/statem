@@ -30,7 +30,7 @@ async fn always_with_no_guard_passing_leaves_state_unchanged() {
     let mut machine = StateMachine::<()>::from_config(config).unwrap();
     machine.register_guard("never", guard_false);
 
-    let ctx = machine.run(None, "idle", vec![], ()).await.unwrap();
+    let ctx = machine.run(None, None, "idle", vec![], ()).await.unwrap();
     assert_eq!(ctx.current_state, "idle");
 }
 
@@ -39,7 +39,7 @@ async fn always_chain_restarts_from_each_new_state() {
     let config = parse(r#"{"a": {"always": [{"target": "b"}]}, "b": {"always": [{"target": "c"}]}, "c": {}}"#);
     let machine = StateMachine::<()>::from_config(config).unwrap();
 
-    let ctx = machine.run(None, "a", vec![], ()).await.unwrap();
+    let ctx = machine.run(None, None, "a", vec![], ()).await.unwrap();
     assert_eq!(ctx.current_state, "c");
 }
 
@@ -48,7 +48,7 @@ async fn always_loop_that_never_settles_errors() {
     let config = parse(r#"{"a": {"always": [{"target": "b"}]}, "b": {"always": [{"target": "a"}]}}"#);
     let machine = StateMachine::<()>::from_config(config).unwrap();
 
-    let err = machine.run(None, "a", vec![], ()).await.unwrap_err();
+    let err = machine.run(None, None, "a", vec![], ()).await.unwrap_err();
     assert!(matches!(err, RunError::AlwaysLoopExceeded(_)), "expected AlwaysLoopExceeded, got {err:?}");
 }
 
@@ -64,7 +64,7 @@ async fn on_transition_action_failure_falls_back_to_error_state() {
     let mut machine = StateMachine::<()>::from_config(config).unwrap();
     machine.register_action("boom", action_fails);
 
-    let ctx = machine.run(None, "idle", vec![Signal::new("START")], ()).await.unwrap();
+    let ctx = machine.run(None, None, "idle", vec![Signal::new("START")], ()).await.unwrap();
     assert_eq!(ctx.current_state, "failed");
 }
 
@@ -74,7 +74,7 @@ async fn on_transition_action_failure_without_error_state_propagates() {
     let mut machine = StateMachine::<()>::from_config(config).unwrap();
     machine.register_action("boom", action_fails);
 
-    let err = machine.run(None, "idle", vec![Signal::new("START")], ()).await.unwrap_err();
+    let err = machine.run(None, None, "idle", vec![Signal::new("START")], ()).await.unwrap_err();
     assert!(matches!(err, RunError::ActionFailed { .. }), "expected ActionFailed, got {err:?}");
 }
 
@@ -93,7 +93,7 @@ async fn entry_action_failure_is_caught_by_error_state() {
     let mut machine = StateMachine::<()>::from_config(config).unwrap();
     machine.register_action("boom", action_fails);
 
-    let ctx = machine.run(None, "idle", vec![Signal::new("START")], ()).await.unwrap();
+    let ctx = machine.run(None, None, "idle", vec![Signal::new("START")], ()).await.unwrap();
     assert_eq!(ctx.current_state, "failed");
 }
 
@@ -113,7 +113,7 @@ async fn always_transition_action_failure_is_not_caught_by_error_state() {
     let mut machine = StateMachine::<()>::from_config(config).unwrap();
     machine.register_action("boom", action_fails);
 
-    let err = machine.run(None, "idle", vec![Signal::new("START")], ()).await.unwrap_err();
+    let err = machine.run(None, None, "idle", vec![Signal::new("START")], ()).await.unwrap_err();
     assert!(matches!(err, RunError::ActionFailed { .. }), "expected raw ActionFailed, got {err:?}");
 }
 
@@ -131,6 +131,6 @@ async fn guard_chain_still_works_alongside_always_and_error_state() {
     machine.register_guard("no", guard_false);
     machine.register_guard("yes", guard_true);
 
-    let ctx = machine.run(None, "idle", vec![Signal::new("GO")], ()).await.unwrap();
+    let ctx = machine.run(None, None, "idle", vec![Signal::new("GO")], ()).await.unwrap();
     assert_eq!(ctx.current_state, "running");
 }

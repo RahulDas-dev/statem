@@ -311,7 +311,7 @@ async fn main() {
     for (event, event_data, teller_says) in conversation {
         println!("\nTeller: {teller_says}");
         let signal = Signal::with_data(event, event_data);
-        let ctx = machine.run(Some("bank-demo-001".to_string()), state, vec![signal], session).await.expect("run should succeed");
+        let ctx = machine.run(Some("bank-demo-001".to_string()), None, state, vec![signal], session).await.expect("run should succeed");
 
         for line in &ctx.session.log[log_cursor..] {
             println!("  {line}");

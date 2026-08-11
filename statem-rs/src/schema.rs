@@ -73,33 +73,85 @@ pub struct ResultEntry {
     pub kind: ResultKind,
 }
 
+/// Derives the value broadcast via `STATE_SNAPSHOT`/`STATE_DELTA` from `session`, passed to
+/// [`crate::machine::StateMachine::stream`].
+#[cfg(feature = "agui")]
+pub type StateAccessor<T> = std::sync::Arc<dyn Fn(&T) -> serde_json::Value + Send + Sync>;
+
 /// Short-lived execution context passed to every guard and action during one `run()` call.
 ///
 /// Generic over `T`, the session type. Guards receive `&Context<T>` (read-only); actions receive
 /// `&mut Context<T>` (may mutate `session` freely) -- enforced by the borrow checker, not just by
 /// convention as in the Python port.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Context<T> {
     /// Correlation id for this run, used in log lines. `None` until `StateMachine::run` fills it
     /// in (generates one if the caller didn't supply one).
     pub run_id: Option<String>,
+    /// Correlation id for the broader conversation/session this run belongs to (one thread can
+    /// span many runs). `None` until `StateMachine::run`/`stream` fills it in, same as `run_id`.
+    pub thread_id: Option<String>,
     pub current_state: String,
     pub session: T,
     /// Every state entered during this run, in order; the first entry is always the initial state.
     pub history: Vec<String>,
     pub results: Vec<ResultEntry>,
+    /// Internal -- set by `StateMachine::stream` to a sender it emits AG-UI events onto; left
+    /// `None` by `StateMachine::run`. Not meant for guards/actions to use directly; check
+    /// [`Context::is_stream`] instead of reading this field.
+    #[cfg(feature = "agui")]
+    pub(crate) event_tx: Option<futures_channel::mpsc::UnboundedSender<crate::agui::AguiEvent>>,
+    /// Internal -- set by `StateMachine::stream` from its `state_accessor` argument. Derives the
+    /// value broadcast via `STATE_SNAPSHOT`/`STATE_DELTA` from `session`; `None` means the
+    /// default `{"current_state": ...}` view is used instead.
+    #[cfg(feature = "agui")]
+    pub(crate) state_accessor: Option<StateAccessor<T>>,
+    /// Internal -- the last value broadcast via `STATE_SNAPSHOT`/`STATE_DELTA`, kept so
+    /// `StateMachine::stream` can diff against it to build the next `STATE_DELTA`.
+    #[cfg(feature = "agui")]
+    pub(crate) state_snapshot: Option<serde_json::Value>,
 }
 
 impl<T> Context<T> {
-    pub fn new(current_state: impl Into<String>, session: T, run_id: Option<String>) -> Self {
+    pub fn new(current_state: impl Into<String>, session: T, run_id: Option<String>, thread_id: Option<String>) -> Self {
         let current_state = current_state.into();
         Context {
             run_id,
+            thread_id,
             history: vec![current_state.clone()],
             current_state,
             session,
             results: Vec::new(),
+            #[cfg(feature = "agui")]
+            event_tx: None,
+            #[cfg(feature = "agui")]
+            state_accessor: None,
+            #[cfg(feature = "agui")]
+            state_snapshot: None,
         }
+    }
+
+    /// `true` when this context was created by `StateMachine::stream`, `false` for `run`.
+    #[cfg(feature = "agui")]
+    pub(crate) fn is_stream(&self) -> bool {
+        self.event_tx.is_some()
+    }
+}
+
+/// Hand-written rather than derived: under the `agui` feature, `state_accessor` is a
+/// `dyn Fn(&T) -> Value`, which can't implement `Debug` -- printed as presence/absence instead.
+impl<T: std::fmt::Debug> std::fmt::Debug for Context<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = f.debug_struct("Context");
+        s.field("run_id", &self.run_id)
+            .field("thread_id", &self.thread_id)
+            .field("current_state", &self.current_state)
+            .field("session", &self.session)
+            .field("history", &self.history)
+            .field("results", &self.results);
+        #[cfg(feature = "agui")]
+        s.field("is_stream", &self.is_stream()).field("state_snapshot", &self.state_snapshot);
+        s.finish()
     }
 }
 
@@ -271,13 +323,19 @@ mod tests {
 
     #[test]
     fn context_preserves_explicit_run_id() {
-        let ctx = Context::new("idle", (), Some("custom-id".to_string()));
+        let ctx = Context::new("idle", (), Some("custom-id".to_string()), None);
         assert_eq!(ctx.run_id.as_deref(), Some("custom-id"));
     }
 
     #[test]
     fn context_leaves_run_id_none_when_omitted() {
-        let ctx = Context::new("idle", (), None);
+        let ctx = Context::new("idle", (), None, None);
         assert_eq!(ctx.run_id, None);
+    }
+
+    #[test]
+    fn context_preserves_explicit_thread_id() {
+        let ctx = Context::new("idle", (), None, Some("custom-thread".to_string()));
+        assert_eq!(ctx.thread_id.as_deref(), Some("custom-thread"));
     }
 }

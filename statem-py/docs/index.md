@@ -1,3 +1,14 @@
+```{toctree}
+:hidden:
+:maxdepth: 2
+
+quickstart
+guide
+streaming
+examples
+api
+```
+
 # statem
 
 A minimal async state machine engine for Python, built on [Pydantic](https://docs.pydantic.dev/).
@@ -54,6 +65,14 @@ there instead of propagating the exception.
 states automatically (capped at 100 hops, to catch runaway loops). See the [Guide](guide.md) for
 the full config shape and shorthand forms.
 
+## Streaming
+
+`run()` returns once everything has settled. [`stream()`](streaming.md) drives the same engine
+but yields [AG-UI protocol](https://docs.ag-ui.com/) events (`STEP_STARTED`, `STATE_SNAPSHOT`,
+`ACTIVITY_SNAPSHOT`, `STATE_DELTA`, `STEP_FINISHED`) hop by hop as it runs — for UIs, SSE
+endpoints, or anything else that needs to observe a run in progress. It's purely additive and
+needs the `agui` extra: `pip install statem[agui]`.
+
 ## Install
 
 ```bash
@@ -66,5 +85,6 @@ The importable package is `statem`:
 from statem import StateMachine, Signal
 ```
 
-Continue to the [Quickstart](quickstart.md) for a runnable example, or the [Guide](guide.md) for
-a full walkthrough of the config shape and execution model.
+Continue to the [Quickstart](quickstart.md) for a runnable example, the [Guide](guide.md) for
+a full walkthrough of the config shape and execution model, or [Streaming](streaming.md) for the
+`stream()` API.

@@ -16,6 +16,13 @@ indexmap = { version = "=2.13.1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
+async-stream = { version = "0.3", optional = true }
+futures-channel = { version = "0.3", optional = true }
+futures-util = { version = "0.3", features = ["async-await", "std"], optional = true }
+json-patch = { version = "4", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
+
+[features]
+agui = ["dep:async-stream", "dep:futures-channel", "dep:futures-util", "dep:json-patch"]

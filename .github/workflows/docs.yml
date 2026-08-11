@@ -35,12 +35,12 @@ jobs:
         run: uv sync --extra docs
 
       - name: Build site
-        run: uv run mkdocs build --strict
+        run: uv run sphinx-build -b html -W docs docs/_build/html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: statem-py/site
+          path: statem-py/docs/_build/html
 
   deploy:
     needs: build

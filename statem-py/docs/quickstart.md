@@ -34,7 +34,7 @@ running
 Walking through what happened:
 
 1. `StateMachine.from_dict(config, guard_dict={...})` validates `config` against the
-   [`StateConfig`](api.md#statem.StateConfig) schema, registers the `can_start` guard, and
+   {py:class}`StateConfig <statem.StateConfig>` schema, registers the `can_start` guard, and
    checks every guard/action referenced in `config` is registered (since `guard_dict` was
    supplied).
 2. `machine.run(state_name="idle", events=Signal(event="START"), session={})` starts in `"idle"`, dispatches a
@@ -49,4 +49,5 @@ process (`examples/bread.py`) and a richer bank-teller bot (`examples/bank.py`) 
 every hook the engine has, including `error_state` recovering from a real exception.
 
 See the [Guide](guide.md) for what each config field (`on`, `always`, `entry`, `exit`,
-`error_state`) does, and the [API Reference](api.md) for the full public surface.
+`error_state`) does, [Streaming](streaming.md) for the AG-UI `stream()` API, and the
+[API Reference](api.md) for the full public surface.

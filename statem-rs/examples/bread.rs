@@ -80,7 +80,7 @@ async fn main() {
 
     let events = vec![Signal::new("START"), Signal::new("MIXED"), Signal::new("TIMER_DONE")];
     let ctx = machine
-        .run(Some("bake-001".to_string()), "idle", events, BakingSession::default())
+        .run(Some("bake-001".to_string()), None, "idle", events, BakingSession::default())
         .await
         .expect("run should succeed");
 

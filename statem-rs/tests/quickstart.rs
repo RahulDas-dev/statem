@@ -26,7 +26,7 @@ async fn idle_to_running_via_guarded_transition() {
     machine.register_guard("can_start", can_start);
 
     let ctx = machine
-        .run(None, "idle", vec![Signal::new("START")], ())
+        .run(None, None, "idle", vec![Signal::new("START")], ())
         .await
         .expect("run should succeed");
 
@@ -53,7 +53,7 @@ async fn run_records_guard_and_action_results_for_trace() {
     machine.register_action("log_entry", |_ctx: &mut Context<()>, _signal: &Signal| Ok(()));
 
     let ctx = machine
-        .run(None, "idle", vec![Signal::new("START")], ())
+        .run(None, None, "idle", vec![Signal::new("START")], ())
         .await
         .expect("run should succeed");
 
